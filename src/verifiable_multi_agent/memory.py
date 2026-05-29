@@ -34,4 +34,5 @@ class JsonlProtocolMemory:
                 record = json.loads(line)
                 score = len(task_terms & set(record["task"].lower().split()))
                 scored.append((score, record))
-        return [record for score, record in sorted(scored, reverse=True)[:limit] if score > 0]
+        ranked = sorted(scored, key=lambda item: item[0], reverse=True)
+        return [record for score, record in ranked[:limit] if score > 0]
