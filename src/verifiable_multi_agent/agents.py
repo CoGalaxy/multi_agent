@@ -13,7 +13,11 @@ class RuleBasedAgent:
         if self.role == AgentRole.PLANNER:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
-                claim = self.backend.complete("You are a planning agent. Return one concise plan claim.", task)
+                claim = self.backend.complete(
+                    "You are a planning agent. Return one concise plan claim.",
+                    task,
+                    role=self.role.value,
+                )
             return ContractMessage(
                 role=self.role,
                 subtask="Decompose task and choose execution plan",
@@ -29,6 +33,7 @@ class RuleBasedAgent:
                 claim = self.backend.complete(
                     "You are an execution agent. Draft a concise candidate answer.",
                     f"Task: {task}\nPlan: {plan or 'direct execution'}",
+                    role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
@@ -40,10 +45,20 @@ class RuleBasedAgent:
             )
         if self.role == AgentRole.VERIFIER:
             unsupported = [message.id for message in context if not message.has_support]
+            claim = "All prior claims are supported." if not unsupported else "Some claims lack support."
+            if self.backend:
+                claim = self.backend.complete(
+                    "You are a verification agent. Judge whether the trace is supported. Return one concise verdict.",
+                    "\n".join(
+                        f"{message.role.value}: claim={message.claim}; evidence={message.evidence}; action={message.action}"
+                        for message in context
+                    ),
+                    role=self.role.value,
+                )
             return ContractMessage(
                 role=self.role,
                 subtask="Check contract support",
-                claim="All prior claims are supported." if not unsupported else "Some claims lack support.",
+                claim=claim,
                 evidence=["Checked each contract message for claim and evidence fields."],
                 action="Accept trace." if not unsupported else "Request local retry for unsupported messages.",
                 uncertainty=0.15 if not unsupported else 0.65,
@@ -54,6 +69,7 @@ class RuleBasedAgent:
             claim = self.backend.complete(
                 "You are a synthesis agent. Produce a concise final answer.",
                 "\n".join(message.claim for message in context),
+                role=self.role.value,
             )
         return ContractMessage(
             role=self.role,

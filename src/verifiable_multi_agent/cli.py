@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import typer
@@ -7,7 +8,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from verifiable_multi_agent.backends import OpenAICompatibleBackend
+from verifiable_multi_agent.backends import DeepSeekBackend, OpenAICompatibleBackend
 from verifiable_multi_agent.orchestrator import Orchestrator
 
 app = typer.Typer(help="Run the verifiable multi-agent research scaffold.")
@@ -18,13 +19,30 @@ console = Console(no_color=True)
 def solve(
     task: str = typer.Argument(..., help="Task for the multi-agent scaffold."),
     memory: Path = typer.Option(Path("data/protocol_memory.jsonl"), help="Protocol memory JSONL path."),
-    backend: str = typer.Option("mock", help="Backend: mock or vllm."),
+    backend: str = typer.Option("mock", help="Backend: mock, vllm, or deepseek."),
     base_url: str = typer.Option("http://127.0.0.1:8000/v1", help="OpenAI-compatible base URL."),
-    model: str = typer.Option("local-model", help="Model name served by vLLM."),
+    model: str = typer.Option("local-model", help="Model name for vLLM or DeepSeek."),
+    judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
+    api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
 ) -> None:
     llm = None
     if backend == "vllm":
         llm = OpenAICompatibleBackend(base_url=base_url, model=model)
+    elif backend == "deepseek":
+        key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        if not key:
+            raise typer.BadParameter("DeepSeek backend requires --api-key or DEEPSEEK_API_KEY.")
+        deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+        deepseek_model = model if model != "local-model" else os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+        deepseek_judge_model = judge_model or os.getenv("DEEPSEEK_JUDGE_MODEL")
+        llm = DeepSeekBackend(
+            api_key=key,
+            model=deepseek_model,
+            judge_model=deepseek_judge_model,
+            base_url=deepseek_base_url,
+        )
+    elif backend != "mock":
+        raise typer.BadParameter("backend must be one of: mock, vllm, deepseek.")
     trace = Orchestrator(memory_path=memory, backend=llm).solve(task)
     console.print(f"[bold]Topology:[/bold] {trace.topology.value}")
     console.print(f"[bold]Complexity:[/bold] {trace.profile.complexity}")
