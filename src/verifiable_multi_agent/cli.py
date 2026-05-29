@@ -15,6 +15,21 @@ app = typer.Typer(help="Run the verifiable multi-agent research scaffold.")
 console = Console(no_color=True)
 
 
+def load_env_file(path: Path = Path(".env")) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if value.startswith("${") and value.endswith("}"):
+            value = os.getenv(value[2:-1], "")
+        os.environ.setdefault(key, value)
+
+
 @app.command()
 def solve(
     task: str = typer.Argument(..., help="Task for the multi-agent scaffold."),
@@ -25,6 +40,7 @@ def solve(
     judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
 ) -> None:
+    load_env_file()
     llm = None
     if backend == "vllm":
         llm = OpenAICompatibleBackend(base_url=base_url, model=model)
