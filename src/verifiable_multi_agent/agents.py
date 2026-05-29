@@ -4,6 +4,13 @@ from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, ContractMessage
 
 
+GROUNDING_RULES = (
+    "Ground every claim in the original task. "
+    "Do not introduce a new topic that is absent from the task. "
+    "If the task is underspecified, say what is missing and provide a safe generic plan."
+)
+
+
 class RuleBasedAgent:
     def __init__(self, role: AgentRole, backend: LlmBackend | None = None) -> None:
         self.role = role
@@ -14,8 +21,8 @@ class RuleBasedAgent:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
                 claim = self.backend.complete(
-                    "You are a planning agent. Return one concise plan claim.",
-                    task,
+                    f"You are a planning agent. Return one concise plan claim. {GROUNDING_RULES}",
+                    _prompt_with_context(task, context),
                     role=self.role.value,
                 )
             return ContractMessage(
@@ -31,8 +38,8 @@ class RuleBasedAgent:
             claim = f"Candidate answer for task: {task}"
             if self.backend:
                 claim = self.backend.complete(
-                    "You are an execution agent. Draft a concise candidate answer.",
-                    f"Task: {task}\nPlan: {plan or 'direct execution'}",
+                    f"You are an execution agent. Draft a concise candidate answer. {GROUNDING_RULES}",
+                    _prompt_with_context(task, context, extra=f"Selected plan: {plan or 'direct execution'}"),
                     role=self.role.value,
                 )
             return ContractMessage(
@@ -48,11 +55,8 @@ class RuleBasedAgent:
             claim = "All prior claims are supported." if not unsupported else "Some claims lack support."
             if self.backend:
                 claim = self.backend.complete(
-                    "You are a verification agent. Judge whether the trace is supported. Return one concise verdict.",
-                    "\n".join(
-                        f"{message.role.value}: claim={message.claim}; evidence={message.evidence}; action={message.action}"
-                        for message in context
-                    ),
+                    f"You are a verification agent. Judge whether the trace is supported and on task. {GROUNDING_RULES}",
+                    _prompt_with_context(task, context),
                     role=self.role.value,
                 )
             return ContractMessage(
@@ -67,8 +71,8 @@ class RuleBasedAgent:
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
         if self.backend:
             claim = self.backend.complete(
-                "You are a synthesis agent. Produce a concise final answer.",
-                "\n".join(message.claim for message in context),
+                f"You are a synthesis agent. Produce a concise final answer to the original task. {GROUNDING_RULES}",
+                _prompt_with_context(task, context),
                 role=self.role.value,
             )
         return ContractMessage(
@@ -86,3 +90,20 @@ def _latest_claim(messages: list[ContractMessage], role: AgentRole) -> str | Non
         if message.role == role:
             return message.claim
     return None
+
+
+def _prompt_with_context(task: str, context: list[ContractMessage], extra: str | None = None) -> str:
+    lines = [
+        f"Original task: {task}",
+        "Trace:",
+    ]
+    if not context:
+        lines.append("- No prior messages.")
+    for message in context:
+        lines.append(
+            f"- role={message.role.value}; subtask={message.subtask}; "
+            f"claim={message.claim}; evidence={message.evidence}; action={message.action}"
+        )
+    if extra:
+        lines.append(extra)
+    return "\n".join(lines)
