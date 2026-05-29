@@ -1,3 +1,12 @@
+"""
+命令行入口 — 框架的统一启动点。
+
+使用方式：
+  vma "task description"                        # mock 模式，零依赖
+  vma "task" --backend deepseek --model ...     # 云端 API（过渡期）
+  vma "task" --backend vllm --model Qwen2.5-7B  # 本地模型（最终配置）
+"""
+
 from __future__ import annotations
 
 import os
@@ -16,6 +25,7 @@ console = Console(no_color=True)
 
 
 def load_env_file(path: Path = Path(".env")) -> None:
+    """加载 .env 文件到环境变量，支持 ${VAR} 引用已有环境变量。"""
     if not path.exists():
         return
     for raw_line in path.read_text(encoding="utf-8-sig").splitlines():

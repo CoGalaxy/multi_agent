@@ -1,4 +1,9 @@
-"""Minimal scaffold for verifiable multi-agent collaboration research."""
+"""
+可验证多智能体协作研究的最小原型框架。
+
+当前处于中期前验证阶段，所有模块使用确定性 agent + 规则验证器，
+确保管线逻辑正确后再接入本地小参数量模型（如 Qwen2.5-7B）。
+"""
 
 __all__ = ["__version__"]
 

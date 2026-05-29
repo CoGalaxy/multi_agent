@@ -1,3 +1,16 @@
+"""
+LLM 后端抽象层 — 解耦 Agent 逻辑与模型调用。
+
+设计意图：
+- Mock/Echo 模式：零依赖跑通管线，中期前验证用
+- OpenAI-compatible 模式：对接 vLLM/local-model 等本地推理服务
+- DeepSeek 模式：过渡期使用云端 API，最终替换为本地模型
+
+学术论文的最终配置：用 7B 量级模型通过 vLLM 自托管，
+所有 API 调用走 http://127.0.0.1:8000/v1 —— 无外部依赖，
+可复现，成本可控。
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -14,12 +27,22 @@ class LlmBackend(ABC):
 
 
 class EchoBackend(LlmBackend):
+    """调试用后端：直接拼接 system + user 返回，不调用任何模型。"""
+
     def complete(self, system: str, user: str, role: str | None = None) -> str:
         return f"{system.strip()} :: {user.strip()}"
 
 
 class OpenAICompatibleBackend(LlmBackend):
-    """Backend for OpenAI-compatible `/v1/chat/completions` servers."""
+    """
+    通用 OpenAI-compatible 后端。
+
+    支持 vLLM、Ollama、text-generation-webui 等所有兼容 /v1/chat/completions
+    的本地推理服务。接入本地模型后这是主要使用的后端。
+
+    role_models 机制允许不同角色使用不同模型（如 verifier 用强模型），
+    这是成本-质量权衡的关键设计点。
+    """
 
     def __init__(
         self,
@@ -54,6 +77,7 @@ class OpenAICompatibleBackend(LlmBackend):
         payload.update(self.extra_body)
         headers = {"Authorization": f"Bearer {self.api_key}"}
         last_error: Exception | None = None
+        # 指数退避重试：处理本地模型服务的偶发连接波动
         for attempt in range(self.max_retries + 1):
             try:
                 response = httpx.post(
@@ -77,6 +101,18 @@ class OpenAICompatibleBackend(LlmBackend):
 
 
 class DeepSeekBackend(OpenAICompatibleBackend):
+    """
+    DeepSeek 云端后端 — 中期开发阶段的过渡方案。
+
+    最终论文中应替换为本地模型。保留此类用于：
+    1. 与本地小模型做性能对比实验
+    2. 在本地模型不可用时提供 fallback
+
+    judge_model 机制：verifier 和 synthesizer 需要更强的推理能力，
+    可以用不同规格的模型（如 flash vs pro），这是成本-质量权衡的
+    一个实验变量。
+    """
+
     def __init__(
         self,
         api_key: str,
