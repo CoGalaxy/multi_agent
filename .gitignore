@@ -11,3 +11,7 @@ build/
 .env
 data/*.jsonl
 !data/.gitkeep
+.claude/
+.vscode/
+logs/
+pid/

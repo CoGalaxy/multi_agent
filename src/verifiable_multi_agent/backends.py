@@ -136,3 +136,75 @@ class DeepSeekBackend(OpenAICompatibleBackend):
             role_models=role_models,
             max_retries=max_retries,
         )
+
+
+class OllamaBackend(LlmBackend):
+    """
+    Ollama 本地后端 — 最便捷的本地推理方案。
+
+    使用 Ollama 原生 /api/chat 端点（非 OpenAI-compatible），以支持
+    think=False 关闭 reasoning 模型的思考模式。
+
+    Qwen3.5 默认会消耗大量 token 在 thinking 上；设置 think=False 后
+    直接输出回答，大幅降低延迟和 token 消耗。
+    """
+
+    def __init__(
+        self,
+        model: str = "qwen3.5:4b",
+        base_url: str = "http://localhost:11434",
+        timeout: float = 120.0,
+        temperature: float = 0.2,
+        max_tokens: int = 2048,
+        think: bool = False,
+        max_retries: int = 2,
+        retry_sleep: float = 1.0,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.think = think
+        self.max_retries = max_retries
+        self.retry_sleep = retry_sleep
+
+    def complete(self, system: str, user: str, role: str | None = None) -> str:
+        messages: list[dict[str, str]] = []
+        if system.strip():
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user})
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            },
+        }
+        # 关闭 reasoning 模型的 thinking 模式
+        if not self.think:
+            payload["think"] = False
+
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["message"]["content"]
+            except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError, httpx.TimeoutException) as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    break
+                time.sleep(self.retry_sleep * (attempt + 1))
+        raise RuntimeError(
+            f"Ollama request failed after {self.max_retries + 1} attempts "
+            f"(model={self.model}, role={role or 'default'}): {last_error}"
+        ) from last_error
