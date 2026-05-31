@@ -6,6 +6,8 @@
 #   make run-mock TASK="..." mock 模式（零依赖验证管线）
 #   make test                测试 LLM 是否正常响应
 #   make test-unit           运行单元测试
+#   make benchmark            运行 profiler 对比基准测试 (100 tasks)
+#   make benchmark-quick      快速基准测试 (10 tasks)
 #   make install-dev         安装项目 + dev 依赖
 
 # ─── configurable vars ──────────────────────────────────────
@@ -83,6 +85,19 @@ test-unit:
 .PHONY: test-unit-cov
 test-unit-cov:
 	$(call _conda, python -m pytest tests/ -v --tb=short)
+
+# ─── benchmark ───────────────────────────────────────────────
+.PHONY: benchmark
+benchmark:
+	$(call _conda, python scripts/benchmark.py)
+
+.PHONY: benchmark-quick
+benchmark-quick:
+	$(call _conda, python scripts/benchmark.py --sample 10)
+
+.PHONY: benchmark-disagree
+benchmark-disagree:
+	$(call _conda, python scripts/benchmark.py --disagreements-only)
 
 # ─── clean ───────────────────────────────────────────────────
 .PHONY: clean
