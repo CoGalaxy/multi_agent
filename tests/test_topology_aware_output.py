@@ -40,7 +40,8 @@ def test_chinese_compare_task_uses_supervisor_worker_and_chinese_trace(tmp_path:
     assert trace.topology == Topology.SUPERVISOR_WORKER
     assert trace.topology_reason and "中等复杂度" in trace.topology_reason
     assert any("定义工作顺序" in message.subtask for message in trace.messages)
-    assert trace.final_answer and "执行路线" in trace.final_answer
+    assert trace.final_answer
+    assert "执行路线" not in trace.final_answer
 
 
 def test_chinese_high_risk_task_uses_review_loop(tmp_path: Path) -> None:

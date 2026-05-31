@@ -49,6 +49,7 @@ def solve(
     model: str = typer.Option("local-model", help="Model name for vLLM or DeepSeek."),
     judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
+    show_trace: bool = typer.Option(False, help="Show internal topology, execution summary, and contract trace."),
 ) -> None:
     load_env_file()
     llm = None
@@ -72,11 +73,14 @@ def solve(
     trace = Orchestrator(memory_path=memory, backend=llm).solve(task)
     zh = _contains_cjk(task)
     labels = _labels(zh)
+    console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
+    if not show_trace:
+        return
+
     console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
     console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
     console.print(f"[bold]{labels['complexity']}:[/bold] {trace.profile.complexity}")
     console.print(f"[bold]{labels['accepted']}:[/bold] {trace.verification.accepted if trace.verification else False}")
-    console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
     console.print(f"[bold]{labels['execution_summary']}:[/bold]")
     for item in trace.execution_summary:
         console.print(f"- {item}")

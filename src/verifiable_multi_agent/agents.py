@@ -109,9 +109,6 @@ class RuleBasedAgent:
             )
         # ── Synthesizer (默认分支): 综合所有消息产出最终答案 ──
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
-        if stage_note:
-            final_label = "最终答案" if _contains_cjk(task) else "Final answer"
-            claim = f"{_route_label(task)}:\n{stage_note}\n\n{final_label}:\n{claim}"
         if self.backend:
             claim = self.backend.complete(
                 _system_prompt(
@@ -119,7 +116,9 @@ class RuleBasedAgent:
                     task,
                     (
                         "Produce a concise final answer to the original task. "
-                        f"Start with a brief '{_route_label(task)}' sentence explaining how the selected topology shaped the answer."
+                        "Use the internal trace to improve the answer, but do not mention internal orchestration, "
+                        "topology, planner, executor, verifier, synthesizer, or trace unless the user asks. "
+                        "Do not describe the internal route; if a procedure is needed, call it a plan, checklist, or steps."
                     ),
                 ),
                 _prompt_with_context(task, context, extra=stage_note),
