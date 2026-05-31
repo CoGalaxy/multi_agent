@@ -22,3 +22,11 @@ def select_topology(profile: TaskProfile) -> Topology:
     if profile.complexity >= 0.25 or profile.step_count >= 3:
         return Topology.SUPERVISOR_WORKER
     return Topology.SINGLE_AGENT
+
+
+def explain_topology(profile: TaskProfile, topology: Topology) -> str:
+    if topology == Topology.SINGLE_AGENT:
+        return "Low complexity: use direct execution plus a lightweight verification pass."
+    if topology == Topology.SUPERVISOR_WORKER:
+        return "Medium complexity: use a planner to define the work order before execution and verification."
+    return "High complexity or risk: use an execution-review-revision loop before final synthesis."

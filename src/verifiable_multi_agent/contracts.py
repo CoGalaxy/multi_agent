@@ -135,6 +135,8 @@ class AgentTrace(BaseModel):
     task: str
     topology: Topology
     profile: TaskProfile
+    topology_reason: str | None = None
+    execution_summary: list[str] = Field(default_factory=list)
     messages: list[ContractMessage] = Field(default_factory=list)
     verification: VerificationResult | None = None
     final_answer: str | None = None

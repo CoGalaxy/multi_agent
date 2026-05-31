@@ -71,9 +71,13 @@ def solve(
         raise typer.BadParameter("backend must be one of: mock, vllm, deepseek.")
     trace = Orchestrator(memory_path=memory, backend=llm).solve(task)
     console.print(f"[bold]Topology:[/bold] {trace.topology.value}")
+    console.print(f"[bold]Topology reason:[/bold] {trace.topology_reason}")
     console.print(f"[bold]Complexity:[/bold] {trace.profile.complexity}")
     console.print(f"[bold]Accepted:[/bold] {trace.verification.accepted if trace.verification else False}")
     console.print(f"[bold]Answer:[/bold] {trace.final_answer}")
+    console.print("[bold]Execution summary:[/bold]")
+    for item in trace.execution_summary:
+        console.print(f"- {item}")
 
     table = Table(title="Contract Trace", box=box.ASCII)
     table.add_column("Role")

@@ -30,23 +30,31 @@ class RuleBasedAgent:
         self.role = role
         self.backend = backend
 
-    def run(self, task: str, context: list[ContractMessage]) -> ContractMessage:
+    def run(
+        self,
+        task: str,
+        context: list[ContractMessage],
+        subtask: str | None = None,
+        action: str | None = None,
+        stage_note: str | None = None,
+    ) -> ContractMessage:
         # ── Planner: 分解任务，产出执行计划 ──
         if self.role == AgentRole.PLANNER:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
                 claim = self.backend.complete(
                     f"You are a planning agent. Return one concise plan claim. {GROUNDING_RULES}",
-                    _prompt_with_context(task, context),
+                    _prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Decompose task and choose execution plan",
+                subtask=subtask or "Decompose task and choose execution plan",
                 claim=claim,
                 evidence=["Task profile and requested deliverable were inspected."],
-                action="Create an execution checklist and hand it to the executor.",
+                action=action or "Create an execution checklist and hand it to the executor.",
                 uncertainty=0.25,
+                metadata={"stage_note": stage_note} if stage_note else {},
             )
         # ── Executor: 基于 Planner 的计划产出候选答案 ──
         if self.role == AgentRole.EXECUTOR:
@@ -55,16 +63,25 @@ class RuleBasedAgent:
             if self.backend:
                 claim = self.backend.complete(
                     f"You are an execution agent. Draft a concise candidate answer. {GROUNDING_RULES}",
-                    _prompt_with_context(task, context, extra=f"Selected plan: {plan or 'direct execution'}"),
+                    _prompt_with_context(
+                        task,
+                        context,
+                        extra="\n".join(
+                            item
+                            for item in [stage_note, f"Selected plan: {plan or 'direct execution'}"]
+                            if item
+                        ),
+                    ),
                     role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Produce candidate solution",
+                subtask=subtask or "Produce candidate solution",
                 claim=claim,
                 evidence=[plan or "Direct task statement is available."],
-                action="Draft the answer and expose assumptions for verification.",
+                action=action or "Draft the answer and expose assumptions for verification.",
                 uncertainty=0.35,
+                metadata={"stage_note": stage_note} if stage_note else {},
             )
         # ── Verifier: 检查所有先序消息是否有支撑 ──
         if self.role == AgentRole.VERIFIER:
@@ -73,33 +90,43 @@ class RuleBasedAgent:
             if self.backend:
                 claim = self.backend.complete(
                     f"You are a verification agent. Judge whether the trace is supported and on task. {GROUNDING_RULES}",
-                    _prompt_with_context(task, context),
+                    _prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Check contract support",
+                subtask=subtask or "Check contract support",
                 claim=claim,
                 evidence=["Checked each contract message for claim and evidence fields."],
-                action="Accept trace." if not unsupported else "Request local retry for unsupported messages.",
+                action=action or ("Accept trace." if not unsupported else "Request local retry for unsupported messages."),
                 uncertainty=0.15 if not unsupported else 0.65,
-                metadata={"unsupported_message_ids": unsupported},
+                metadata={
+                    "unsupported_message_ids": unsupported,
+                    **({"stage_note": stage_note} if stage_note else {}),
+                },
             )
         # ── Synthesizer (默认分支): 综合所有消息产出最终答案 ──
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
+        if stage_note:
+            claim = f"Execution route:\n{stage_note}\n\nFinal answer:\n{claim}"
         if self.backend:
             claim = self.backend.complete(
-                f"You are a synthesis agent. Produce a concise final answer to the original task. {GROUNDING_RULES}",
-                _prompt_with_context(task, context),
+                (
+                    "You are a synthesis agent. Produce a concise final answer to the original task. "
+                    "Start with a brief 'Execution route' sentence explaining how the selected topology shaped the answer. "
+                    f"{GROUNDING_RULES}"
+                ),
+                _prompt_with_context(task, context, extra=stage_note),
                 role=self.role.value,
             )
         return ContractMessage(
             role=self.role,
-            subtask="Synthesize final answer",
+            subtask=subtask or "Synthesize final answer",
             claim=claim,
             evidence=[message.claim for message in context if message.has_support],
-            action="Return concise final response with trace summary.",
+            action=action or "Return concise final response with trace summary.",
             uncertainty=0.2,
+            metadata={"stage_note": stage_note} if stage_note else {},
         )
 
 
