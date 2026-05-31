@@ -56,9 +56,9 @@ class Orchestrator:
             budget.consume()
 
         # 阶段 1: 按拓扑执行 Agent 链
-        for step in _steps_for(topology):
+        for step in _steps_for(topology, task):
             budget.consume()
-            trace.execution_summary.append(f"{step['role'].value}: {step['subtask']}")
+            trace.execution_summary.append(f"{_role_label(step['role'], task)}: {step['subtask']}")
             trace.messages.append(
                 RuleBasedAgent(step["role"], backend=self.backend).run(
                     task,
@@ -89,10 +89,13 @@ class Orchestrator:
             trace.verification = verify_contracts(trace.messages)
 
         # 阶段 3: 综合最终答案
+        synth_stage_label = "执行摘要" if _contains_cjk(task) else "Execution summary"
         synth = RuleBasedAgent(AgentRole.SYNTHESIZER, backend=self.backend).run(
             task,
             trace.messages,
-            stage_note="Execution summary:\n" + "\n".join(f"- {item}" for item in trace.execution_summary),
+            subtask="合成最终答案" if _contains_cjk(task) else None,
+            action="结合执行路线、候选答案和验证意见，返回最终答案。" if _contains_cjk(task) else None,
+            stage_note=f"{synth_stage_label}:\n" + "\n".join(f"- {item}" for item in trace.execution_summary),
         )
         trace.messages.append(synth)
         trace.final_answer = synth.claim
@@ -110,7 +113,9 @@ def _roles_for(topology: Topology) -> tuple[AgentRole, ...]:
     return (AgentRole.PLANNER, AgentRole.EXECUTOR, AgentRole.VERIFIER, AgentRole.EXECUTOR, AgentRole.VERIFIER)
 
 
-def _steps_for(topology: Topology) -> tuple[dict, ...]:
+def _steps_for(topology: Topology, task: str = "") -> tuple[dict, ...]:
+    if _contains_cjk(task):
+        return _steps_for_zh(topology)
     if topology == Topology.SINGLE_AGENT:
         return (
             {
@@ -179,3 +184,89 @@ def _steps_for(topology: Topology) -> tuple[dict, ...]:
             "stage_note": "Final verifier pass: accept only if the revised answer is safe and on task.",
         },
     )
+
+
+def _steps_for_zh(topology: Topology) -> tuple[dict, ...]:
+    if topology == Topology.SINGLE_AGENT:
+        return (
+            {
+                "role": AgentRole.EXECUTOR,
+                "subtask": "直接回答低复杂度任务",
+                "action": "不经过规划交接，直接给出简洁明确的回答。",
+                "stage_note": "低复杂度路线：直接回答，但保留必要假设。",
+            },
+            {
+                "role": AgentRole.VERIFIER,
+                "subtask": "对直接回答进行轻量验证",
+                "action": "检查回答是否紧扣原始任务，并给出明确结论。",
+                "stage_note": "验证直接回答是否与原始任务一致，避免顾左右而言它。",
+            },
+        )
+    if topology == Topology.SUPERVISOR_WORKER:
+        return (
+            {
+                "role": AgentRole.PLANNER,
+                "subtask": "定义工作顺序和比较标准",
+                "action": "将任务拆成回答要求、比较维度和验证要点。",
+                "stage_note": "中等复杂度路线：规划角色先明确回答结构和判断标准。",
+            },
+            {
+                "role": AgentRole.EXECUTOR,
+                "subtask": "按照规划结果执行回答",
+                "action": "严格依据规划角色给出的标准生成答案。",
+                "stage_note": "执行角色必须先给确定答复，再补充条件和限制。",
+            },
+            {
+                "role": AgentRole.VERIFIER,
+                "subtask": "按规划标准验证答案",
+                "action": "检查答案是否覆盖每个标准，并指出证据或条件不足之处。",
+                "stage_note": "验证角色按规划标准检查覆盖度，而不是泛泛确认。",
+            },
+        )
+    return (
+        {
+            "role": AgentRole.PLANNER,
+            "subtask": "规划高风险执行和合规检查",
+            "action": "先识别安全边界、必要检查项和修订标准。",
+            "stage_note": "高风险路线：在回答前先定义安全边界。",
+        },
+        {
+            "role": AgentRole.EXECUTOR,
+            "subtask": "生成初版安全回答",
+            "action": "生成避免危险细节、说明缺失条件的初版答案。",
+            "stage_note": "第一轮执行：给出安全初稿并暴露不确定性。",
+        },
+        {
+            "role": AgentRole.VERIFIER,
+            "subtask": "审查初稿的安全性和合规性",
+            "action": "检查是否存在危险指令、约束缺失或无依据结论。",
+            "stage_note": "第一轮验证：指出修订轮需要处理的问题。",
+        },
+        {
+            "role": AgentRole.EXECUTOR,
+            "subtask": "根据验证意见修订答案",
+            "action": "根据验证意见修订答案，并明确安全理由。",
+            "stage_note": "第二轮执行：根据验证意见修订初稿。",
+        },
+        {
+            "role": AgentRole.VERIFIER,
+            "subtask": "最终合规验证",
+            "action": "确认修订后的答案满足安全和任务约束。",
+            "stage_note": "最终验证：只有安全且紧扣任务时才接受。",
+        },
+    )
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _role_label(role: AgentRole, task: str) -> str:
+    if not _contains_cjk(task):
+        return role.value
+    return {
+        AgentRole.PLANNER: "规划角色",
+        AgentRole.EXECUTOR: "执行角色",
+        AgentRole.VERIFIER: "验证角色",
+        AgentRole.SYNTHESIZER: "合成角色",
+    }[role]

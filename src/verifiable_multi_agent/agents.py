@@ -21,7 +21,9 @@ from verifiable_multi_agent.contracts import AgentRole, ContractMessage
 GROUNDING_RULES = (
     "Ground every claim in the original task. "
     "Do not introduce a new topic that is absent from the task. "
-    "If the task is underspecified, say what is missing and provide a safe generic plan."
+    "Give a direct answer first whenever the task is answerable from the task wording or common domain knowledge. "
+    "Do not over-refuse merely because no source document was attached. "
+    "If important details are missing, answer at a safe general level first, then briefly state what would improve precision."
 )
 
 
@@ -43,7 +45,7 @@ class RuleBasedAgent:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
                 claim = self.backend.complete(
-                    f"You are a planning agent. Return one concise plan claim. {GROUNDING_RULES}",
+                    _system_prompt("planning", task, "Return one concise plan claim."),
                     _prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
@@ -62,7 +64,7 @@ class RuleBasedAgent:
             claim = f"Candidate answer for task: {task}"
             if self.backend:
                 claim = self.backend.complete(
-                    f"You are an execution agent. Draft a concise candidate answer. {GROUNDING_RULES}",
+                    _system_prompt("execution", task, "Draft a concise candidate answer."),
                     _prompt_with_context(
                         task,
                         context,
@@ -89,7 +91,7 @@ class RuleBasedAgent:
             claim = "All prior claims are supported." if not unsupported else "Some claims lack support."
             if self.backend:
                 claim = self.backend.complete(
-                    f"You are a verification agent. Judge whether the trace is supported and on task. {GROUNDING_RULES}",
+                    _system_prompt("verification", task, "Judge whether the trace is supported and on task."),
                     _prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
@@ -108,13 +110,17 @@ class RuleBasedAgent:
         # ── Synthesizer (默认分支): 综合所有消息产出最终答案 ──
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
         if stage_note:
-            claim = f"Execution route:\n{stage_note}\n\nFinal answer:\n{claim}"
+            final_label = "最终答案" if _contains_cjk(task) else "Final answer"
+            claim = f"{_route_label(task)}:\n{stage_note}\n\n{final_label}:\n{claim}"
         if self.backend:
             claim = self.backend.complete(
-                (
-                    "You are a synthesis agent. Produce a concise final answer to the original task. "
-                    "Start with a brief 'Execution route' sentence explaining how the selected topology shaped the answer. "
-                    f"{GROUNDING_RULES}"
+                _system_prompt(
+                    "synthesis",
+                    task,
+                    (
+                        "Produce a concise final answer to the original task. "
+                        f"Start with a brief '{_route_label(task)}' sentence explaining how the selected topology shaped the answer."
+                    ),
                 ),
                 _prompt_with_context(task, context, extra=stage_note),
                 role=self.role.value,
@@ -154,3 +160,25 @@ def _prompt_with_context(task: str, context: list[ContractMessage], extra: str |
     if extra:
         lines.append(extra)
     return "\n".join(lines)
+
+
+def _system_prompt(agent_kind: str, task: str, instruction: str) -> str:
+    return (
+        f"You are a {agent_kind} agent. {instruction} "
+        f"{_language_rule(task)} "
+        f"{GROUNDING_RULES}"
+    )
+
+
+def _language_rule(task: str) -> str:
+    if _contains_cjk(task):
+        return "The original task is in Chinese; respond entirely in Simplified Chinese, including headings and route labels."
+    return "Respond in the same language as the original task."
+
+
+def _route_label(task: str) -> str:
+    return "执行路线" if _contains_cjk(task) else "Execution route"
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)

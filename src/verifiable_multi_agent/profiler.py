@@ -16,10 +16,13 @@ import re
 from verifiable_multi_agent.contracts import TaskProfile
 
 
-# 三类关键词表反映任务特征维度
+# 三类关键词表反映任务特征维度。英文走 token 匹配，中文走子串匹配。
 TOOL_HINTS = {"search", "browse", "file", "api", "database", "tool", "evidence", "verify"}
 RISK_HINTS = {"delete", "payment", "medical", "legal", "security", "harm", "private", "unsafe"}
 UNCERTAINTY_HINTS = {"unknown", "maybe", "investigate", "compare", "latest", "current", "research"}
+TOOL_HINTS_ZH = {"工具", "证据", "验证", "检索", "搜索", "文件", "数据库", "调用"}
+RISK_HINTS_ZH = {"高风险", "安全", "合规", "医疗", "法律", "隐私", "删除", "危险", "越权"}
+UNCERTAINTY_HINTS_ZH = {"比较", "研究", "分析", "调查", "最新", "当前", "不确定", "评估"}
 
 
 def profile_task(task: str) -> TaskProfile:
@@ -31,14 +34,14 @@ def profile_task(task: str) -> TaskProfile:
 
     return TaskProfile(
         task=task,
-        tool_need=_score_overlap(tokens, TOOL_HINTS),
-        uncertainty=_score_overlap(tokens, UNCERTAINTY_HINTS),
+        tool_need=_score_overlap(tokens, TOOL_HINTS, task, TOOL_HINTS_ZH),
+        uncertainty=_score_overlap(tokens, UNCERTAINTY_HINTS, task, UNCERTAINTY_HINTS_ZH),
         step_count=step_count,
-        risk=_score_overlap(tokens, RISK_HINTS),
+        risk=_score_overlap(tokens, RISK_HINTS, task, RISK_HINTS_ZH),
     )
 
 
-def _score_overlap(tokens: set[str], hints: set[str]) -> float:
+def _score_overlap(tokens: set[str], hints: set[str], task: str, zh_hints: set[str]) -> float:
     """命中 2 个关键词即视为饱和 (score = 1.0)，避免少数命中就高估。"""
-    hits = len(tokens & hints)
+    hits = len(tokens & hints) + sum(1 for hint in zh_hints if hint in task)
     return min(hits / 2, 1.0)

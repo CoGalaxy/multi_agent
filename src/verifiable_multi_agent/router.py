@@ -25,8 +25,18 @@ def select_topology(profile: TaskProfile) -> Topology:
 
 
 def explain_topology(profile: TaskProfile, topology: Topology) -> str:
+    if _contains_cjk(profile.task):
+        if topology == Topology.SINGLE_AGENT:
+            return "低复杂度：采用直接执行，并追加轻量验证。"
+        if topology == Topology.SUPERVISOR_WORKER:
+            return "中等复杂度：先由规划角色定义工作顺序，再执行并验证。"
+        return "高复杂度或高风险：采用执行-审查-修订闭环，再进行最终合成。"
     if topology == Topology.SINGLE_AGENT:
         return "Low complexity: use direct execution plus a lightweight verification pass."
     if topology == Topology.SUPERVISOR_WORKER:
         return "Medium complexity: use a planner to define the work order before execution and verification."
     return "High complexity or risk: use an execution-review-revision loop before final synthesis."
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)

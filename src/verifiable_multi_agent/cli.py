@@ -70,23 +70,59 @@ def solve(
     elif backend != "mock":
         raise typer.BadParameter("backend must be one of: mock, vllm, deepseek.")
     trace = Orchestrator(memory_path=memory, backend=llm).solve(task)
-    console.print(f"[bold]Topology:[/bold] {trace.topology.value}")
-    console.print(f"[bold]Topology reason:[/bold] {trace.topology_reason}")
-    console.print(f"[bold]Complexity:[/bold] {trace.profile.complexity}")
-    console.print(f"[bold]Accepted:[/bold] {trace.verification.accepted if trace.verification else False}")
-    console.print(f"[bold]Answer:[/bold] {trace.final_answer}")
-    console.print("[bold]Execution summary:[/bold]")
+    zh = _contains_cjk(task)
+    labels = _labels(zh)
+    console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
+    console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
+    console.print(f"[bold]{labels['complexity']}:[/bold] {trace.profile.complexity}")
+    console.print(f"[bold]{labels['accepted']}:[/bold] {trace.verification.accepted if trace.verification else False}")
+    console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
+    console.print(f"[bold]{labels['execution_summary']}:[/bold]")
     for item in trace.execution_summary:
         console.print(f"- {item}")
 
-    table = Table(title="Contract Trace", box=box.ASCII)
-    table.add_column("Role")
-    table.add_column("Subtask")
-    table.add_column("Support")
-    table.add_column("Action")
+    table = Table(title=labels["contract_trace"], box=box.ASCII)
+    table.add_column(labels["role"])
+    table.add_column(labels["subtask"])
+    table.add_column(labels["support"])
+    table.add_column(labels["action"])
     for message in trace.messages:
-        table.add_row(message.role.value, message.subtask, "yes" if message.has_support else "no", message.action)
+        support = "是" if zh and message.has_support else "否" if zh else "yes" if message.has_support else "no"
+        table.add_row(message.role.value, message.subtask, support, message.action)
     console.print(table)
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _labels(zh: bool) -> dict[str, str]:
+    if not zh:
+        return {
+            "topology": "Topology",
+            "topology_reason": "Topology reason",
+            "complexity": "Complexity",
+            "accepted": "Accepted",
+            "answer": "Answer",
+            "execution_summary": "Execution summary",
+            "contract_trace": "Contract Trace",
+            "role": "Role",
+            "subtask": "Subtask",
+            "support": "Support",
+            "action": "Action",
+        }
+    return {
+        "topology": "拓扑",
+        "topology_reason": "拓扑原因",
+        "complexity": "复杂度",
+        "accepted": "验证通过",
+        "answer": "答案",
+        "execution_summary": "执行摘要",
+        "contract_trace": "合约轨迹",
+        "role": "角色",
+        "subtask": "子任务",
+        "support": "支撑",
+        "action": "动作",
+    }
 
 
 if __name__ == "__main__":
