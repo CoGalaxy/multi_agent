@@ -20,24 +20,41 @@ from verifiable_multi_agent.contracts import TaskProfile
 
 logger = logging.getLogger(__name__)
 
-# 三类关键词表反映任务特征维度
-TOOL_HINTS = {"search", "browse", "file", "api", "database", "tool", "evidence", "verify"}
-RISK_HINTS = {"delete", "payment", "medical", "legal", "security", "harm", "private", "unsafe"}
-UNCERTAINTY_HINTS = {"unknown", "maybe", "investigate", "compare", "latest", "current", "research"}
+# 关键词表 — 中英双语，反映任务特征维度
+TOOL_HINTS = {
+    "search", "browse", "file", "api", "database", "tool", "evidence", "verify",
+    "搜索", "浏览", "文件", "数据库", "工具", "证据", "验证", "查询",
+    "下载", "上传", "接口", "部署", "配置", "安装", "监控", "爬虫",
+}
+RISK_HINTS = {
+    "delete", "payment", "medical", "legal", "security", "harm", "private", "unsafe",
+    "删除", "支付", "医疗", "法律", "安全", "隐私", "危险", "密码",
+    "审计", "合规", "加密", "认证", "权限", "审批", "财务", "生产",
+}
+UNCERTAINTY_HINTS = {
+    "unknown", "maybe", "investigate", "compare", "latest", "current", "research",
+    "未知", "可能", "调查", "比较", "最新", "当前", "研究", "探索",
+    "分析", "评估", "优化", "设计", "规划", "建议", "也许", "尝试",
+}
 
-# few-shot prompt — 用三个典型样本教 0.8b 模型学会分类
+# few-shot prompt — 中英双语样例教模型分类（Qwen 中文原生，双语 prompt 效果最佳）
 _PROFILE_PROMPT = """Classify this task into four dimensions. Output ONLY a JSON object.
+Classify both Chinese and English tasks equally well.
 
-Dimension definitions:
-- tool_need (0-1): Requires database, API, file system, web search, or external tools?
-- uncertainty (0-1): Contains exploratory, ambiguous, or investigative language?
-- step_count (int>=1): Number of distinct actions or clauses.
-- risk (0-1): Involves deletion, payments, medical, legal, security, privacy, or irreversible operations?
+Dimensions:
+- tool_need (0-1): Requires database, API, file system, web search, or external tools? (需要数据库、API、文件系统、搜索等工具?)
+- uncertainty (0-1): Contains exploratory, ambiguous, or investigative language? (包含探索性、模糊、调查性表述?)
+- step_count (int>=1): Number of distinct actions or clauses. (独立步骤或从句数量)
+- risk (0-1): Involves deletion, payments, medical, legal, security, privacy, or irreversible ops? (涉及删除、支付、医疗、法律、安全、隐私等高风险?)
 
 Examples:
 1. Say hello → {"tool_need": 0.0, "uncertainty": 0.0, "step_count": 1, "risk": 0.0}
-2. Research latest AI trends and compare them → {"tool_need": 0.7, "uncertainty": 0.9, "step_count": 2, "risk": 0.0}
-3. Delete user data from production DB, verify backup → {"tool_need": 1.0, "uncertainty": 0.1, "step_count": 2, "risk": 0.95}
+2. 打个招呼 → {"tool_need": 0.0, "uncertainty": 0.0, "step_count": 1, "risk": 0.0}
+3. Research latest AI trends and compare them → {"tool_need": 0.7, "uncertainty": 0.9, "step_count": 2, "risk": 0.0}
+4. 研究最新AI趋势并做对比分析 → {"tool_need": 0.7, "uncertainty": 0.9, "step_count": 2, "risk": 0.0}
+5. Delete user data from production DB, verify backup → {"tool_need": 1.0, "uncertainty": 0.1, "step_count": 2, "risk": 0.95}
+6. 删除生产数据库中的用户数据并验证备份 → {"tool_need": 1.0, "uncertainty": 0.1, "step_count": 2, "risk": 0.95}
+7. 设计一个复杂的多智能体协作系统，包括任务分配、通信协议和冲突解决 → {"tool_need": 0.4, "uncertainty": 0.75, "step_count": 3, "risk": 0.1}
 
 Now classify: "{task}"
 
@@ -45,23 +62,34 @@ JSON:"""
 
 
 def profile_task(task: str) -> TaskProfile:
-    """关键词匹配 baseline — 零延迟，作为 LLM profiler 的 fallback。"""
-    tokens = set(re.findall(r"[a-zA-Z_]+", task.lower()))
-    clauses = re.split(r"[,;，；。]| and | then | after ", task.lower())
-    step_count = max(1, len([clause for clause in clauses if clause.strip()]))
+    """关键词匹配 baseline — 零延迟，中英双语支持。
+
+    中文用子串匹配（无空格分词的折中方案），英文用 token set 匹配。
+    """
+    text = task.lower()
+
+    # 英文 token set 匹配
+    en_tokens = set(re.findall(r"[a-zA-Z_]+", text))
+    # 中文子串匹配：遍历关键词表看是否出现在原文中
+    cn_hits = {h for h in TOOL_HINTS | RISK_HINTS | UNCERTAINTY_HINTS if h in text}
+
+    # 按中英文标点 + 连接词拆分从句
+    clauses = re.split(r"[,;，；。、\n]| and | then | after | 然后 | 之后 | 以及 | 并且 ", text)
+    step_count = max(1, len([c for c in clauses if c.strip()]))
+    all_hints = en_tokens | cn_hits
 
     return TaskProfile(
         task=task,
-        tool_need=_score_overlap(tokens, TOOL_HINTS),
-        uncertainty=_score_overlap(tokens, UNCERTAINTY_HINTS),
+        tool_need=_score_overlap(all_hints, TOOL_HINTS),
+        uncertainty=_score_overlap(all_hints, UNCERTAINTY_HINTS),
         step_count=step_count,
-        risk=_score_overlap(tokens, RISK_HINTS),
+        risk=_score_overlap(all_hints, RISK_HINTS),
     )
 
 
-def _score_overlap(tokens: set[str], hints: set[str]) -> float:
-    hits = len(tokens & hints)
-    return min(hits / 2, 1.0)
+def _score_overlap(hits: set[str], hints: set[str]) -> float:
+    n = len(hits & hints)
+    return min(n / 2, 1.0)
 
 
 class LlmProfiler:
