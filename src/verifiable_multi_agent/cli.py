@@ -21,6 +21,7 @@ from rich.table import Table
 
 from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend, OpenAICompatibleBackend
 from verifiable_multi_agent.orchestrator import Orchestrator
+from verifiable_multi_agent.profiler import LlmProfiler
 
 app = typer.Typer(help="Run the verifiable multi-agent research scaffold.")
 console = Console(no_color=True)
@@ -49,14 +50,19 @@ def solve(
     backend: str = typer.Option("ollama", help="Backend: mock, ollama, vllm, or deepseek."),
     base_url: str = typer.Option("http://127.0.0.1:8000/v1", help="OpenAI-compatible base URL."),
     model: str = typer.Option("local-model", help="Model name for vLLM or DeepSeek."),
+    profile_model: str | None = typer.Option(None, help="Small model for LLM-based task profiling (default: qwen3.5:0.8b for ollama)."),
     judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
 ) -> None:
     load_env_file()
     llm = None
+    profiler = None
     if backend == "ollama":
         ollama_model = model if model != "local-model" else "qwen3.5:4b"
         llm = OllamaBackend(model=ollama_model)
+        # 用独立的小模型做任务画像，0.8b 足够准确且极快
+        profiler_model_name = profile_model or "qwen3.5:0.8b"
+        profiler = LlmProfiler(OllamaBackend(model=profiler_model_name))
     elif backend == "vllm":
         llm = OpenAICompatibleBackend(base_url=base_url, model=model)
     elif backend == "deepseek":
@@ -74,7 +80,7 @@ def solve(
         )
     elif backend != "mock":
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
-    trace = Orchestrator(memory_path=memory, backend=llm).solve(task)
+    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler).solve(task)
     console.print(f"[bold]Topology:[/bold] {trace.topology.value}")
     console.print(f"[bold]Complexity:[/bold] {trace.profile.complexity}")
     console.print(f"[bold]Accepted:[/bold] {trace.verification.accepted if trace.verification else False}")

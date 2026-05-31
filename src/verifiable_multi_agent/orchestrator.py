@@ -21,19 +21,25 @@ from verifiable_multi_agent.agents import RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, Topology
 from verifiable_multi_agent.memory import JsonlProtocolMemory
-from verifiable_multi_agent.profiler import profile_task
+from verifiable_multi_agent.profiler import LlmProfiler, profile_task
 from verifiable_multi_agent.router import select_topology
 from verifiable_multi_agent.verifier import verify_contracts
 
 
 class Orchestrator:
-    def __init__(self, memory_path: Path | None = None, backend: LlmBackend | None = None) -> None:
+    def __init__(
+        self,
+        memory_path: Path | None = None,
+        backend: LlmBackend | None = None,
+        profiler: LlmProfiler | None = None,
+    ) -> None:
         self.memory = JsonlProtocolMemory(memory_path or Path("data/protocol_memory.jsonl"))
         self.backend = backend
+        self.profiler = profiler
 
     def solve(self, task: str, budget: Budget | None = None) -> AgentTrace:
         budget = budget or Budget()
-        profile = profile_task(task)
+        profile = self.profiler.profile(task) if self.profiler else profile_task(task)
         topology = select_topology(profile)
         prior_protocols = self.memory.retrieve(task)
 
