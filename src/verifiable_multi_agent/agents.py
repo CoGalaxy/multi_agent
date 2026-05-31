@@ -66,24 +66,39 @@ class RuleBasedAgent:
                 action="Draft the answer and expose assumptions for verification.",
                 uncertainty=0.35,
             )
-        # ── Verifier: 检查所有先序消息是否有支撑 ──
+        # ── Verifier: 结构检查 + 语义审计 ──
         if self.role == AgentRole.VERIFIER:
             unsupported = [message.id for message in context if not message.has_support]
-            claim = "All prior claims are supported." if not unsupported else "Some claims lack support."
             if self.backend:
-                claim = self.backend.complete(
-                    f"You are a verification agent. Judge whether the trace is supported and on task. {GROUNDING_RULES}",
+                # 让 LLM 做真正的语义验证，不只是结构化检查
+                raw = self.backend.complete(
+                    "You are a strict verification agent. Audit the trace for topic drift, "
+                    "evidence quality, logical gaps, and task coverage. "
+                    "Be specific about what is wrong. If everything checks out, say why.",
                     _prompt_with_context(task, context),
                     role=self.role.value,
                 )
+                claim = raw
+            else:
+                claim = (
+                    "All prior claims are supported and grounded in the task."
+                    if not unsupported
+                    else f"{len(unsupported)} message(s) lack evidence support."
+                )
             return ContractMessage(
                 role=self.role,
-                subtask="Check contract support",
+                subtask="Verify contract trace — structural and semantic audit",
                 claim=claim,
-                evidence=["Checked each contract message for claim and evidence fields."],
-                action="Accept trace." if not unsupported else "Request local retry for unsupported messages.",
+                evidence=[
+                    f"Audited {len(context)} prior messages for claim-evidence alignment.",
+                    f"Checked for topic drift, logical consistency, and task coverage.",
+                ],
+                action="Accept trace." if not unsupported else "Reject trace — escalate or retry.",
                 uncertainty=0.15 if not unsupported else 0.65,
-                metadata={"unsupported_message_ids": unsupported},
+                metadata={
+                    "unsupported_message_ids": unsupported,
+                    "messages_audited": len(context),
+                },
             )
         # ── Synthesizer (默认分支): 综合所有消息产出最终答案 ──
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task

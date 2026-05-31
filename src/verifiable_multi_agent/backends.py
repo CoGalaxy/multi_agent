@@ -21,6 +21,9 @@ import httpx
 
 
 class LlmBackend(ABC):
+    # 标记是否为真实 LLM（mock/echo 后端返回 False，避免语义验证误判）
+    is_real_llm: bool = True
+
     @abstractmethod
     def complete(self, system: str, user: str, role: str | None = None) -> str:
         raise NotImplementedError
@@ -28,6 +31,8 @@ class LlmBackend(ABC):
 
 class EchoBackend(LlmBackend):
     """调试用后端：直接拼接 system + user 返回，不调用任何模型。"""
+
+    is_real_llm: bool = False
 
     def complete(self, system: str, user: str, role: str | None = None) -> str:
         return f"{system.strip()} :: {user.strip()}"
