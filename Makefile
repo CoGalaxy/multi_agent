@@ -99,6 +99,18 @@ benchmark-quick:
 benchmark-disagree:
 	$(call _conda, python scripts/benchmark.py --disagreements-only)
 
+.PHONY: benchmark-e2e
+benchmark-e2e:
+	$(call _conda, python scripts/benchmark_e2e.py)
+
+.PHONY: benchmark-e2e-quick
+benchmark-e2e-quick:
+	$(call _conda, python scripts/benchmark_e2e.py --sample 10)
+
+.PHONY: benchmark-e2e-verbose
+benchmark-e2e-verbose:
+	$(call _conda, python scripts/benchmark_e2e.py --verbose)
+
 # ─── clean ───────────────────────────────────────────────────
 .PHONY: clean
 clean:
