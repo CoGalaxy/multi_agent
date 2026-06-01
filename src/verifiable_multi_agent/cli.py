@@ -22,6 +22,8 @@ from rich.table import Table
 from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend, OpenAICompatibleBackend
 from verifiable_multi_agent.orchestrator import Orchestrator
 from verifiable_multi_agent.profiler import LlmProfiler
+from verifiable_multi_agent.reporting import format_contract_report
+from verifiable_multi_agent.trace import build_run_trace, run_trace_json, save_run_trace
 
 app = typer.Typer(help="Run the verifiable multi-agent research scaffold.")
 console = Console(no_color=True)
@@ -54,6 +56,9 @@ def solve(
     judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
     hide_trace: bool = typer.Option(False, help="Hide internal topology, execution summary, and contract trace."),
+    json_trace: bool = typer.Option(False, "--json-trace", help="Output the complete run trace as JSON."),
+    contract_report: bool = typer.Option(False, "--contract-report", help="Output a human-readable contract report."),
+    save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
 ) -> None:
     load_env_file()
     llm = None
@@ -82,9 +87,24 @@ def solve(
     elif backend != "mock":
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
     trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler).solve(task)
+    run_trace = build_run_trace(trace)
+    saved_path = save_run_trace(run_trace) if save_run else None
+
+    if json_trace:
+        typer.echo(run_trace_json(run_trace))
+        return
+
+    if contract_report:
+        console.print(format_contract_report(trace))
+        if saved_path:
+            console.print(f"\nSaved run: {saved_path}")
+        return
+
     zh = _contains_cjk(task)
     labels = _labels(zh)
     console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
+    if saved_path:
+        console.print(f"[bold]Saved run:[/bold] {saved_path}")
     if hide_trace:
         return
 
