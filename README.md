@@ -48,3 +48,38 @@ flowchart LR
 ## Current Scope
 
 The scaffold uses deterministic agents so the system can be tested before connecting real LLM backends. Replace `RuleBasedAgent` with an API-backed implementation once baseline logging and benchmark wrappers are stable.
+
+## Observable Runs and Contract Reports
+
+Each CLI run can now expose the collaboration trace without changing the topology router or agent decision logic:
+
+```powershell
+vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --contract-report
+vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --json-trace
+vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --save-run
+```
+
+`--save-run` writes `runs/{run_id}/trace.json`. The JSON trace includes the task, task profile, selected topology, executed agents, contract messages, verification result, final answer, and metrics.
+
+Example contract report:
+
+```text
+[Task Profile]
+tool_need=0.60 | uncertainty=0.75 | risk=0.20 | complexity=0.54
+
+[Topology]
+selected=SUPERVISOR_WORKER
+reason=multi-step task with moderate uncertainty
+
+[Contract Report]
+messages=4
+supported_claims=3
+support_rate=0.75
+evidence_coverage=0.75
+action_completeness=1.00
+accepted=False
+violations=["Executor#2 missing evidence"]
+
+[Final Answer]
+...
+```
