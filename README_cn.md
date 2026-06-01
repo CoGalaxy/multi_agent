@@ -116,3 +116,35 @@ block_reason=missing material: task requires given material but no material cont
 ## 定量 Router Adapter 更新
 
 现在 `--router quant` 会通过轻量 adapter 将 `TopologySpec` 映射回现有三种 legacy topology：`SINGLE_AGENT`、`SUPERVISOR_WORKER` 或 `REVIEW_LOOP`。它仍然不会实现 CollaborationGraph，也不会做动态图执行。对于缺少给定材料的任务，会停止正常 agent 执行并返回 `accepted=False`。
+
+## 定量 Router 第二阶段
+
+`--router quant` 现在会启用受约束的顺序图执行路径：
+
+```text
+TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
+```
+
+默认 router 路径保持不变。只有显式指定 `--router quant` 时才会启用图执行。
+
+运行示例：
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+```
+
+示例输出：
+
+```text
+[Generated Topology]
+Planner -> Executor -> Verifier -> Synthesizer
+blocked=False
+
+[Graph Execution]
+executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
+skipped_nodes=[]
+review_loops_used=0
+execution_mode=sequential_dag
+```
+
+第一版 GraphExecutor 只支持顺序 DAG，不做并发，不允许任意环；review loop 受 `max_review_loops` 限制。

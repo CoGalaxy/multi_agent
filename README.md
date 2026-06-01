@@ -112,3 +112,33 @@ TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_bu
 ```
 
 For material-grounded tasks without supplied material, the spec is marked as blocked and normal agent execution is stopped with `accepted=False`.
+
+## Quantitative Router Stage 2
+
+`--router quant` now uses a constrained sequential graph execution path:
+
+```text
+TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
+```
+
+The default router path is unchanged. Graph execution is enabled only when `--router quant` is selected.
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+```
+
+Example output:
+
+```text
+[Generated Topology]
+Planner -> Executor -> Verifier -> Synthesizer
+blocked=False
+
+[Graph Execution]
+executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
+skipped_nodes=[]
+review_loops_used=0
+execution_mode=sequential_dag
+```
+
+The first graph executor supports only sequential DAG execution. It does not run nodes concurrently and does not allow arbitrary cycles. Review loops are bounded by `max_review_loops`.

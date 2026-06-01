@@ -38,18 +38,19 @@ class QuantitativeRouter:
 
         max_review_loops = 1 if needs.safety_review else 0
         max_tool_calls = 3 if needs.tool_execution else 0
-        max_nodes = 1
-        if needs.planning:
+        max_nodes = 3  # Executor -> Verifier -> Synthesizer is the minimum executable graph.
+        if needs.planning or needs.material_grounding or needs.tool_execution or needs.safety_review:
+            max_nodes += 1
+        if needs.material_grounding:
             max_nodes += 1
         if needs.tool_execution:
             max_nodes += 1
-        if needs.verification:
+        if needs.critique:
+            max_nodes += 1
+        if needs.revision:
             max_nodes += 1
         if needs.safety_review:
             max_nodes += 1
-        if needs.synthesis:
-            max_nodes += 1
-        max_nodes = max(1, min(max_nodes, 6))
         max_edges = max(0, max_nodes - 1 + max_review_loops)
 
         return TopologySpec(

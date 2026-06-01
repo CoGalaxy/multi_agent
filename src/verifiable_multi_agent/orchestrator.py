@@ -28,6 +28,8 @@ from verifiable_multi_agent.memory import JsonlProtocolMemory
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
 from verifiable_multi_agent.quantitative_router import QuantitativeRouter, explain_topology_spec, topology_from_spec
 from verifiable_multi_agent.router import explain_topology, select_topology
+from verifiable_multi_agent.topology.executor import GraphExecutor
+from verifiable_multi_agent.topology.generator import ConstrainedTopologyGenerator
 from verifiable_multi_agent.verifier import SemanticVerifier, verify_contracts
 
 
@@ -57,6 +59,20 @@ class Orchestrator:
             topology_spec = QuantitativeRouter().route(profile, features, requirements)
             topology = topology_from_spec(topology_spec)
             topology_reason = explain_topology_spec(topology_spec)
+            graph = ConstrainedTopologyGenerator().generate(topology_spec)
+            trace = GraphExecutor(backend=self.backend).execute(
+                task=task,
+                graph=graph,
+                profile=profile,
+                topology=topology,
+                topology_reason=topology_reason,
+            )
+            trace.metadata["router_mode"] = "quant"
+            trace.metadata["complexity_features"] = features.model_dump(mode="json") | {"tci": features.tci}
+            trace.metadata["input_requirements"] = requirements.model_dump(mode="json")
+            trace.metadata["topology_spec"] = topology_spec.model_dump(mode="json")
+            self.memory.store(trace)
+            return trace
         else:
             topology = select_topology(profile)
             topology_reason = explain_topology(profile, topology)
