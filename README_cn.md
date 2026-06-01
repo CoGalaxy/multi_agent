@@ -113,3 +113,6 @@ block_reason=missing material: task requires given material but no material cont
 ```
 
 注意：第一阶段只生成规格，不改变 Orchestrator 的实际执行逻辑。
+## 定量 Router Adapter 更新
+
+现在 `--router quant` 会通过轻量 adapter 将 `TopologySpec` 映射回现有三种 legacy topology：`SINGLE_AGENT`、`SUPERVISOR_WORKER` 或 `REVIEW_LOOP`。它仍然不会实现 CollaborationGraph，也不会做动态图执行。对于缺少给定材料的任务，会停止正常 agent 执行并返回 `accepted=False`。

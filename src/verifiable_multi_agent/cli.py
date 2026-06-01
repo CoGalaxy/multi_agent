@@ -20,10 +20,8 @@ from rich.console import Console
 from rich.table import Table
 
 from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend, OpenAICompatibleBackend
-from verifiable_multi_agent.complexity import infer_complexity_features, infer_input_requirements
 from verifiable_multi_agent.orchestrator import Orchestrator
 from verifiable_multi_agent.profiler import LlmProfiler
-from verifiable_multi_agent.quantitative_router import QuantitativeRouter
 from verifiable_multi_agent.reporting import format_contract_report
 from verifiable_multi_agent.trace import build_run_trace, run_trace_json, save_run_trace
 
@@ -61,7 +59,7 @@ def solve(
     json_trace: bool = typer.Option(False, "--json-trace", help="Output the complete run trace as JSON."),
     contract_report: bool = typer.Option(False, "--contract-report", help="Output a human-readable contract report."),
     save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
-    router: str = typer.Option("legacy", "--router", help="Router mode: legacy or quant."),
+    router: str = typer.Option("legacy", "--router", help="Router mode: legacy, rule, or quant."),
 ) -> None:
     load_env_file()
     llm = None
@@ -89,17 +87,9 @@ def solve(
         )
     elif backend != "mock":
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
-    if router not in {"legacy", "quant"}:
-        raise typer.BadParameter("router must be one of: legacy, quant.")
-    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler).solve(task)
-    if router == "quant":
-        requirements = infer_input_requirements(task)
-        features = infer_complexity_features(task, trace.profile)
-        topology_spec = QuantitativeRouter().route(trace.profile, features, requirements)
-        trace.metadata["router_mode"] = "quant"
-        trace.metadata["complexity_features"] = features.model_dump(mode="json") | {"tci": features.tci}
-        trace.metadata["input_requirements"] = requirements.model_dump(mode="json")
-        trace.metadata["topology_spec"] = topology_spec.model_dump(mode="json")
+    if router not in {"legacy", "rule", "quant"}:
+        raise typer.BadParameter("router must be one of: legacy, rule, quant.")
+    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler, router_mode=router).solve(task)
     run_trace = build_run_trace(trace)
     saved_path = save_run_trace(run_trace) if save_run else None
 

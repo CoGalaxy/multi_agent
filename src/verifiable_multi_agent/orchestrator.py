@@ -22,9 +22,11 @@ from pathlib import Path
 
 from verifiable_multi_agent.agents import RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
+from verifiable_multi_agent.complexity import infer_complexity_features, infer_input_requirements
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, ContractMessage, Topology
 from verifiable_multi_agent.memory import JsonlProtocolMemory
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
+from verifiable_multi_agent.quantitative_router import QuantitativeRouter, explain_topology_spec, topology_from_spec
 from verifiable_multi_agent.router import explain_topology, select_topology
 from verifiable_multi_agent.verifier import SemanticVerifier, verify_contracts
 
@@ -35,17 +37,29 @@ class Orchestrator:
         memory_path: Path | None = None,
         backend: LlmBackend | None = None,
         profiler: LlmProfiler | None = None,
+        router_mode: str = "legacy",
     ) -> None:
         self.memory = JsonlProtocolMemory(memory_path or Path("data/protocol_memory.jsonl"))
         self.backend = backend
         self.profiler = profiler
+        self.router_mode = router_mode
         self._semantic = SemanticVerifier(backend) if (backend and backend.is_real_llm) else None
 
     def solve(self, task: str, budget: Budget | None = None) -> AgentTrace:
         budget = budget or Budget()
         profile = self.profiler.profile(task) if self.profiler else profile_task(task)
-        topology = select_topology(profile)
-        topology_reason = explain_topology(profile, topology)
+        topology_spec = None
+        features = None
+        requirements = None
+        if self.router_mode == "quant":
+            requirements = infer_input_requirements(task)
+            features = infer_complexity_features(task, profile)
+            topology_spec = QuantitativeRouter().route(profile, features, requirements)
+            topology = topology_from_spec(topology_spec)
+            topology_reason = explain_topology_spec(topology_spec)
+        else:
+            topology = select_topology(profile)
+            topology_reason = explain_topology(profile, topology)
         prior_protocols = self.memory.retrieve(task)
 
         trace = AgentTrace(
@@ -55,6 +69,19 @@ class Orchestrator:
             topology_reason=topology_reason,
             execution_summary=[topology_reason],
         )
+        if topology_spec and features and requirements:
+            trace.metadata["router_mode"] = "quant"
+            trace.metadata["complexity_features"] = features.model_dump(mode="json") | {"tci": features.tci}
+            trace.metadata["input_requirements"] = requirements.model_dump(mode="json")
+            trace.metadata["topology_spec"] = topology_spec.model_dump(mode="json")
+            if topology_spec.blocked:
+                trace.verification = verify_contracts(trace.messages)
+                trace.verification.accepted = False
+                trace.verification.violations.append(topology_spec.block_reason or "blocked")
+                trace.verification.next_action = "blocked"
+                trace.final_answer = topology_spec.block_reason
+                self.memory.store(trace)
+                return trace
         # 阶段 0: 如果有相似任务的协作模式，先注入复用提示
         if prior_protocols:
             trace.messages.append(

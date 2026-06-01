@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from verifiable_multi_agent.complexity import ComplexityFeatures, InputRequirements
-from verifiable_multi_agent.contracts import TaskProfile
+from verifiable_multi_agent.contracts import TaskProfile, Topology
 from verifiable_multi_agent.routing_spec import CapabilityNeeds, TaskType, TopologySpec
 
 
@@ -64,6 +64,24 @@ class QuantitativeRouter:
             block_reason=block_reason,
             generation_reasons=reasons,
         )
+
+
+def topology_from_spec(spec: TopologySpec) -> Topology:
+    needs = spec.capability_needs
+    if spec.blocked:
+        return Topology.SINGLE_AGENT
+    if needs.safety_review or needs.critique or needs.revision:
+        return Topology.REVIEW_LOOP
+    if needs.planning or needs.material_grounding or needs.tool_execution or needs.synthesis:
+        return Topology.SUPERVISOR_WORKER
+    return Topology.SINGLE_AGENT
+
+
+def explain_topology_spec(spec: TopologySpec) -> str:
+    summary = "; ".join(spec.generation_reasons[:3])
+    if spec.blocked:
+        return f"QuantRouter blocked normal execution: {spec.block_reason}. Reasons: {summary}"
+    return f"QuantRouter selected {topology_from_spec(spec).value} from TopologySpec. Reasons: {summary}"
 
 
 def _task_type(profile: TaskProfile, requirements: InputRequirements) -> TaskType:

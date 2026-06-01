@@ -19,6 +19,8 @@ class CapabilityNeeds(BaseModel):
     tool_execution: bool = False
     material_grounding: bool = False
     verification: bool = False
+    critique: bool = False
+    revision: bool = False
     safety_review: bool = False
     synthesis: bool = False
 

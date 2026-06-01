@@ -3,8 +3,9 @@ from typer.testing import CliRunner
 from verifiable_multi_agent.cli import app
 from verifiable_multi_agent.complexity import infer_complexity_features, infer_input_requirements
 from verifiable_multi_agent.profiler import profile_task
-from verifiable_multi_agent.quantitative_router import QuantitativeRouter
-from verifiable_multi_agent.routing_spec import TaskType
+from verifiable_multi_agent.quantitative_router import QuantitativeRouter, topology_from_spec
+from verifiable_multi_agent.routing_spec import CapabilityNeeds, TaskType, TopologySpec
+from verifiable_multi_agent.contracts import Topology
 
 
 def _spec(task: str):
@@ -76,3 +77,81 @@ def test_cli_quant_router_shows_tci_and_capability_needs(tmp_path) -> None:
     assert "tci=" in result.stdout
     assert "capability_needs=" in result.stdout
     assert "planning" in result.stdout
+
+
+def test_topology_from_safety_review_spec_maps_to_review_loop() -> None:
+    spec = TopologySpec(
+        task_type=TaskType.HIGH_RISK_OPERATION,
+        tci=0.7,
+        capability_needs=CapabilityNeeds(safety_review=True),
+        max_nodes=4,
+        max_edges=4,
+        max_review_loops=1,
+        max_tool_calls=0,
+        generation_reasons=["risk requires safety review"],
+    )
+
+    assert topology_from_spec(spec) == Topology.REVIEW_LOOP
+
+
+def test_cli_quant_comparison_task_executes_supervisor_worker(tmp_path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
+            "--backend",
+            "mock",
+            "--memory",
+            str(tmp_path / "memory.jsonl"),
+            "--router",
+            "quant",
+            "--contract-report",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "selected=SUPERVISOR_WORKER" in result.stdout
+    assert "QuantRouter selected supervisor_worker" in result.stdout
+
+
+def test_cli_quant_simple_explanation_stays_single_agent(tmp_path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "用三句话解释什么是二分查找。",
+            "--backend",
+            "mock",
+            "--memory",
+            str(tmp_path / "memory.jsonl"),
+            "--router",
+            "quant",
+            "--contract-report",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "selected=SINGLE_AGENT" in result.stdout
+
+
+def test_cli_quant_missing_material_blocks_normal_execution(tmp_path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。",
+            "--backend",
+            "mock",
+            "--memory",
+            str(tmp_path / "memory.jsonl"),
+            "--router",
+            "quant",
+            "--contract-report",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "blocked=True" in result.stdout
+    assert "missing material" in result.stdout
+    assert "accepted=False" in result.stdout

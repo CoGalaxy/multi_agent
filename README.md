@@ -86,7 +86,7 @@ violations=["Executor#2 missing evidence"]
 
 ## Quantitative Router Stage 1
 
-The quantitative router is available as an optional specification layer. It does not replace the legacy `SINGLE_AGENT / SUPERVISOR_WORKER / REVIEW_LOOP` execution path yet; it only emits a `TopologySpec` for experiments.
+The quantitative router is available as an optional adapter layer. It emits a `TopologySpec`, then maps that spec back to the existing legacy topologies: `SINGLE_AGENT`, `SUPERVISOR_WORKER`, or `REVIEW_LOOP`. It does not implement a collaboration graph or dynamic graph execution.
 
 ```powershell
 vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --contract-report
@@ -111,4 +111,4 @@ The TCI score is computed as:
 TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_burden + 0.15*uncertainty + 0.15*risk
 ```
 
-For material-grounded tasks without supplied material, the spec is marked as blocked, but the legacy execution flow is not changed in this stage.
+For material-grounded tasks without supplied material, the spec is marked as blocked and normal agent execution is stopped with `accepted=False`.
