@@ -49,7 +49,7 @@ def solve(
     model: str = typer.Option("local-model", help="Model name for vLLM or DeepSeek."),
     judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
-    show_trace: bool = typer.Option(False, help="Show internal topology, execution summary, and contract trace."),
+    hide_trace: bool = typer.Option(False, help="Hide internal topology, execution summary, and contract trace."),
 ) -> None:
     load_env_file()
     llm = None
@@ -74,9 +74,10 @@ def solve(
     zh = _contains_cjk(task)
     labels = _labels(zh)
     console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
-    if not show_trace:
+    if hide_trace:
         return
 
+    console.rule(labels["debug_trace"])
     console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
     console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
     console.print(f"[bold]{labels['complexity']}:[/bold] {trace.profile.complexity}")
@@ -113,6 +114,7 @@ def _labels(zh: bool) -> dict[str, str]:
             "subtask": "Subtask",
             "support": "Support",
             "action": "Action",
+            "debug_trace": "Debug Trace",
         }
     return {
         "topology": "拓扑",
@@ -126,6 +128,7 @@ def _labels(zh: bool) -> dict[str, str]:
         "subtask": "子任务",
         "support": "支撑",
         "action": "动作",
+        "debug_trace": "调试轨迹",
     }
 
 
