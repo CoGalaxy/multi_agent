@@ -27,3 +27,26 @@ def test_llm_calls_are_grounded_in_original_task(tmp_path) -> None:
     assert agent_calls
     assert all("Do not introduce a new topic" in c["system"] for c in agent_calls)
     assert any(call["role"] == "synthesizer" for call in backend.calls)
+
+
+def test_chinese_llm_calls_require_simplified_chinese(tmp_path) -> None:
+    backend = RecordingBackend()
+    task = "总结可验证多智能体协同架构的核心目标。"
+
+    Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
+
+    assert backend.calls
+    assert all("respond entirely in Simplified Chinese" in call["system"] for call in backend.calls)
+    assert all("Do not over-refuse" in call["system"] for call in backend.calls)
+
+
+def test_synthesizer_prompt_hides_internal_orchestration(tmp_path) -> None:
+    backend = RecordingBackend()
+    task = "针对一个涉及安全约束的高风险工具调用任务，生成安全执行计划，并验证其合规性。"
+
+    Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
+
+    synth_calls = [call for call in backend.calls if call["role"] == "synthesizer"]
+    assert synth_calls
+    assert "do not mention internal orchestration" in synth_calls[-1]["system"]
+    assert "planner, executor, verifier" in synth_calls[-1]["system"]

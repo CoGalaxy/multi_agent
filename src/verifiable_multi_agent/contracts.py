@@ -18,8 +18,9 @@ from pydantic import BaseModel, Field
 
 
 class AgentRole(str, Enum):
-    """四种角色对应协作流水线的四个阶段。"""
+    """协作流水线中的角色。"""
 
+    MEMORY = "memory"
     PLANNER = "planner"
     EXECUTOR = "executor"
     VERIFIER = "verifier"
@@ -135,6 +136,8 @@ class AgentTrace(BaseModel):
     task: str
     topology: Topology
     profile: TaskProfile
+    topology_reason: str | None = None
+    execution_summary: list[str] = Field(default_factory=list)
     messages: list[ContractMessage] = Field(default_factory=list)
     verification: VerificationResult | None = None
     final_answer: str | None = None

@@ -15,14 +15,7 @@ from __future__ import annotations
 
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, ContractMessage
-
-
-# 所有 LLM 调用的 system prompt 前缀，防止模型发散
-GROUNDING_RULES = (
-    "Ground every claim in the original task. "
-    "Do not introduce a new topic that is absent from the task. "
-    "If the task is underspecified, say what is missing and provide a safe generic plan."
-)
+from verifiable_multi_agent.prompts import prompt_with_context, system_prompt
 
 
 class RuleBasedAgent:
@@ -30,23 +23,31 @@ class RuleBasedAgent:
         self.role = role
         self.backend = backend
 
-    def run(self, task: str, context: list[ContractMessage]) -> ContractMessage:
+    def run(
+        self,
+        task: str,
+        context: list[ContractMessage],
+        subtask: str | None = None,
+        action: str | None = None,
+        stage_note: str | None = None,
+    ) -> ContractMessage:
         # ── Planner: 分解任务，产出执行计划 ──
         if self.role == AgentRole.PLANNER:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
                 claim = self.backend.complete(
-                    f"You are a planning agent. Return one concise plan claim. {GROUNDING_RULES}",
-                    _prompt_with_context(task, context),
+                    system_prompt("planning", task, "Return one concise plan claim."),
+                    prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Decompose task and choose execution plan",
+                subtask=subtask or "Decompose task and choose execution plan",
                 claim=claim,
                 evidence=["Task profile and requested deliverable were inspected."],
-                action="Create an execution checklist and hand it to the executor.",
+                action=action or "Create an execution checklist and hand it to the executor.",
                 uncertainty=0.25,
+                metadata={"stage_note": stage_note} if stage_note else {},
             )
         # ── Executor: 基于 Planner 的计划产出候选答案 ──
         if self.role == AgentRole.EXECUTOR:
@@ -54,31 +55,42 @@ class RuleBasedAgent:
             claim = f"Candidate answer for task: {task}"
             if self.backend:
                 claim = self.backend.complete(
-                    f"You are an execution agent. Draft a concise candidate answer. {GROUNDING_RULES}",
-                    _prompt_with_context(task, context, extra=f"Selected plan: {plan or 'direct execution'}"),
+                    system_prompt("execution", task, "Draft a concise candidate answer."),
+                    prompt_with_context(
+                        task,
+                        context,
+                        extra="\n".join(
+                            item
+                            for item in [stage_note, f"Selected plan: {plan or 'direct execution'}"]
+                            if item
+                        ),
+                    ),
                     role=self.role.value,
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Produce candidate solution",
+                subtask=subtask or "Produce candidate solution",
                 claim=claim,
                 evidence=[plan or "Direct task statement is available."],
-                action="Draft the answer and expose assumptions for verification.",
+                action=action or "Draft the answer and expose assumptions for verification.",
                 uncertainty=0.35,
+                metadata={"stage_note": stage_note} if stage_note else {},
             )
         # ── Verifier: 结构检查 + 语义审计 ──
         if self.role == AgentRole.VERIFIER:
             unsupported = [message.id for message in context if not message.has_support]
             if self.backend:
                 # 让 LLM 做真正的语义验证，不只是结构化检查
-                raw = self.backend.complete(
-                    "You are a strict verification agent. Audit the trace for topic drift, "
-                    "evidence quality, logical gaps, and task coverage. "
-                    "Be specific about what is wrong. If everything checks out, say why.",
-                    _prompt_with_context(task, context),
+                claim = self.backend.complete(
+                    system_prompt(
+                        "strict verification",
+                        task,
+                        "Audit the trace for topic drift, evidence quality, logical gaps, and task coverage. "
+                        "Be specific about what is wrong. If everything checks out, say why.",
+                    ),
+                    prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
-                claim = raw
             else:
                 claim = (
                     "All prior claims are supported and grounded in the task."
@@ -87,34 +99,45 @@ class RuleBasedAgent:
                 )
             return ContractMessage(
                 role=self.role,
-                subtask="Verify contract trace — structural and semantic audit",
+                subtask=subtask or "Verify contract trace — structural and semantic audit",
                 claim=claim,
                 evidence=[
                     f"Audited {len(context)} prior messages for claim-evidence alignment.",
                     f"Checked for topic drift, logical consistency, and task coverage.",
                 ],
-                action="Accept trace." if not unsupported else "Reject trace — escalate or retry.",
+                action=action or ("Accept trace." if not unsupported else "Reject trace — escalate or retry."),
                 uncertainty=0.15 if not unsupported else 0.65,
                 metadata={
                     "unsupported_message_ids": unsupported,
                     "messages_audited": len(context),
+                    **({"stage_note": stage_note} if stage_note else {}),
                 },
             )
         # ── Synthesizer (默认分支): 综合所有消息产出最终答案 ──
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
         if self.backend:
             claim = self.backend.complete(
-                f"You are a synthesis agent. Produce a concise final answer to the original task. {GROUNDING_RULES}",
-                _prompt_with_context(task, context),
+                system_prompt(
+                    "synthesis",
+                    task,
+                    (
+                        "Produce a concise final answer to the original task. "
+                        "Use the internal trace to improve the answer, but do not mention internal orchestration, "
+                        "topology, planner, executor, verifier, synthesizer, or trace unless the user asks. "
+                        "Do not describe the internal route; if a procedure is needed, call it a plan, checklist, or steps."
+                    ),
+                ),
+                prompt_with_context(task, context, extra=stage_note),
                 role=self.role.value,
             )
         return ContractMessage(
             role=self.role,
-            subtask="Synthesize final answer",
+            subtask=subtask or "Synthesize final answer",
             claim=claim,
             evidence=[message.claim for message in context if message.has_support],
-            action="Return concise final response with trace summary.",
+            action=action or "Return concise final response with trace summary.",
             uncertainty=0.2,
+            metadata={"stage_note": stage_note} if stage_note else {},
         )
 
 
@@ -124,21 +147,3 @@ def _latest_claim(messages: list[ContractMessage], role: AgentRole) -> str | Non
         if message.role == role:
             return message.claim
     return None
-
-
-def _prompt_with_context(task: str, context: list[ContractMessage], extra: str | None = None) -> str:
-    """组装 LLM 输入：原始任务 + 完整协作轨迹 + 可选的计划提示。"""
-    lines = [
-        f"Original task: {task}",
-        "Trace:",
-    ]
-    if not context:
-        lines.append("- No prior messages.")
-    for message in context:
-        lines.append(
-            f"- role={message.role.value}; subtask={message.subtask}; "
-            f"claim={message.claim}; evidence={message.evidence}; action={message.action}"
-        )
-    if extra:
-        lines.append(extra)
-    return "\n".join(lines)
