@@ -74,3 +74,77 @@ Agent 之间的每次通信均为 `ContractMessage`，包含以下字段：
 本框架使用确定性 agent（`RuleBasedAgent`），以便在接入真实 LLM 后端之前完成基线日志和基准测试包装器的测试与稳定工作。
 
 切换至 LLM 后端后，`RuleBasedAgent.run()` 会自动委托给后端，同时注入 grounding 规则——确保每次 LLM 调用都锚定原始任务，不引入任务之外的新话题。
+## 定量 Router 第一阶段
+
+当前新增的定量 Router 是一个可选规格层，只输出 `TopologySpec`，不会替换旧的 `SINGLE_AGENT / SUPERVISOR_WORKER / REVIEW_LOOP` 执行路径，也不会实现动态图执行。
+
+运行示例：
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --contract-report
+```
+
+示例输出：
+
+```text
+[Quantitative Router]
+task_type=comparison
+tci=0.365
+capability_needs=['planning', 'verification', 'synthesis']
+max_nodes=4 | max_edges=3 | max_review_loops=0 | max_tool_calls=0
+blocked=False
+block_reason=None
+generation_reasons=['TCI=0.365 from horizon=0.75, dependency_depth=0.55, tool_burden=0.00, evidence_burden=0.20, uncertainty=0.50, risk=0.00', 'comparison', 'ordered_or_multiple_actions']
+```
+
+TCI 公式：
+
+```text
+TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_burden + 0.15*uncertainty + 0.15*risk
+```
+
+`CapabilityNeeds` 描述任务需要哪些能力，例如 `planning`、`tool_execution`、`material_grounding`、`verification`、`safety_review` 和 `synthesis`。
+
+对于“根据给定材料”但没有提供材料的任务，`TopologySpec` 会标记：
+
+```text
+blocked=True
+block_reason=missing material: task requires given material but no material content was provided
+```
+
+注意：第一阶段只生成规格，不改变 Orchestrator 的实际执行逻辑。
+## 定量 Router Adapter 更新
+
+现在 `--router quant` 会通过轻量 adapter 将 `TopologySpec` 映射回现有三种 legacy topology：`SINGLE_AGENT`、`SUPERVISOR_WORKER` 或 `REVIEW_LOOP`。它仍然不会实现 CollaborationGraph，也不会做动态图执行。对于缺少给定材料的任务，会停止正常 agent 执行并返回 `accepted=False`。
+
+## 定量 Router 第二阶段
+
+`--router quant` 现在会启用受约束的顺序图执行路径：
+
+```text
+TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
+```
+
+默认 router 路径保持不变。只有显式指定 `--router quant` 时才会启用图执行。
+
+运行示例：
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+```
+
+示例输出：
+
+```text
+[Generated Topology]
+Planner -> Executor -> Verifier -> Synthesizer
+blocked=False
+
+[Graph Execution]
+executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
+skipped_nodes=[]
+review_loops_used=0
+execution_mode=sequential_dag
+```
+
+第一版 GraphExecutor 只支持顺序 DAG，不做并发，不允许任意环；review loop 受 `max_review_loops` 限制。

@@ -83,3 +83,62 @@ violations=["Executor#2 missing evidence"]
 [Final Answer]
 ...
 ```
+
+## Quantitative Router Stage 1
+
+The quantitative router is available as an optional adapter layer. It emits a `TopologySpec`, then maps that spec back to the existing legacy topologies: `SINGLE_AGENT`, `SUPERVISOR_WORKER`, or `REVIEW_LOOP`. It does not implement a collaboration graph or dynamic graph execution.
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --contract-report
+```
+
+Example output:
+
+```text
+[Quantitative Router]
+task_type=comparison
+tci=0.365
+capability_needs=['planning', 'verification', 'synthesis']
+max_nodes=4 | max_edges=3 | max_review_loops=0 | max_tool_calls=0
+blocked=False
+block_reason=None
+generation_reasons=['TCI=0.365 from horizon=0.75, dependency_depth=0.55, tool_burden=0.00, evidence_burden=0.20, uncertainty=0.50, risk=0.00', 'comparison', 'ordered_or_multiple_actions']
+```
+
+The TCI score is computed as:
+
+```text
+TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_burden + 0.15*uncertainty + 0.15*risk
+```
+
+For material-grounded tasks without supplied material, the spec is marked as blocked and normal agent execution is stopped with `accepted=False`.
+
+## Quantitative Router Stage 2
+
+`--router quant` now uses a constrained sequential graph execution path:
+
+```text
+TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
+```
+
+The default router path is unchanged. Graph execution is enabled only when `--router quant` is selected.
+
+```powershell
+vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+```
+
+Example output:
+
+```text
+[Generated Topology]
+Planner -> Executor -> Verifier -> Synthesizer
+blocked=False
+
+[Graph Execution]
+executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
+skipped_nodes=[]
+review_loops_used=0
+execution_mode=sequential_dag
+```
+
+The first graph executor supports only sequential DAG execution. It does not run nodes concurrently and does not allow arbitrary cycles. Review loops are bounded by `max_review_loops`.
