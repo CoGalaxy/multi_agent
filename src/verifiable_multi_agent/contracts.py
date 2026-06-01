@@ -141,3 +141,4 @@ class AgentTrace(BaseModel):
     messages: list[ContractMessage] = Field(default_factory=list)
     verification: VerificationResult | None = None
     final_answer: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

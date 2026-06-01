@@ -24,6 +24,7 @@ class RunTrace(BaseModel):
     final_answer: str | None
     metrics: dict
     contract_report: ContractReport
+    metadata: dict
 
 
 def build_run_trace(trace: AgentTrace, run_id: str | None = None) -> RunTrace:
@@ -49,6 +50,7 @@ def build_run_trace(trace: AgentTrace, run_id: str | None = None) -> RunTrace:
             "complexity": trace.profile.complexity,
         },
         contract_report=report,
+        metadata=trace.metadata,
     )
 
 

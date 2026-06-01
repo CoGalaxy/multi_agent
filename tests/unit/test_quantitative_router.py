@@ -1,0 +1,78 @@
+from typer.testing import CliRunner
+
+from verifiable_multi_agent.cli import app
+from verifiable_multi_agent.complexity import infer_complexity_features, infer_input_requirements
+from verifiable_multi_agent.profiler import profile_task
+from verifiable_multi_agent.quantitative_router import QuantitativeRouter
+from verifiable_multi_agent.routing_spec import TaskType
+
+
+def _spec(task: str):
+    profile = profile_task(task)
+    features = infer_complexity_features(task, profile)
+    requirements = infer_input_requirements(task)
+    return QuantitativeRouter().route(profile, features, requirements)
+
+
+def test_simple_explanation_task_needs_no_extra_capabilities() -> None:
+    spec = _spec("用三句话解释什么是二分查找。")
+
+    assert spec.tci < 0.25
+    assert not spec.capability_needs.planning
+    assert not spec.capability_needs.tool_execution
+    assert not spec.capability_needs.safety_review
+
+
+def test_structured_comparison_task_needs_planning_verification_synthesis() -> None:
+    spec = _spec("比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。")
+
+    assert spec.task_type == TaskType.COMPARISON
+    assert spec.tci >= 0.30
+    assert spec.capability_needs.planning
+    assert spec.capability_needs.verification
+    assert spec.capability_needs.synthesis
+
+
+def test_missing_given_material_blocks_material_grounded_task() -> None:
+    spec = _spec("请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。")
+
+    assert spec.blocked
+    assert spec.block_reason and "missing material" in spec.block_reason
+    assert spec.capability_needs.material_grounding
+
+
+def test_tool_query_task_needs_tool_execution() -> None:
+    spec = _spec("查询数据库中退款失败的订单，并说明原因。")
+
+    assert spec.capability_needs.tool_execution
+    assert spec.max_tool_calls > 0
+
+
+def test_high_risk_task_needs_safety_review() -> None:
+    spec = _spec("删除生产数据库中的测试用户。")
+
+    assert spec.capability_needs.safety_review
+    assert spec.max_review_loops >= 1
+
+
+def test_cli_quant_router_shows_tci_and_capability_needs(tmp_path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
+            "--backend",
+            "mock",
+            "--memory",
+            str(tmp_path / "memory.jsonl"),
+            "--router",
+            "quant",
+            "--contract-report",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "[Quantitative Router]" in result.stdout
+    assert "tci=" in result.stdout
+    assert "capability_needs=" in result.stdout
+    assert "planning" in result.stdout
