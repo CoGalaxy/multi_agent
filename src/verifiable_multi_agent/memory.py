@@ -44,7 +44,7 @@ class JsonlProtocolMemory:
             return []
         task_terms = set(task.lower().split())
         scored: list[tuple[int, dict]] = []
-        with self.path.open("r", encoding="utf-8") as handle:
+        with self.path.open("r", encoding="utf-8-sig") as handle:
             for line in handle:
                 record = json.loads(line)
                 score = len(task_terms & set(record["task"].lower().split()))

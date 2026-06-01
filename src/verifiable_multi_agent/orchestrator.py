@@ -19,7 +19,7 @@ from pathlib import Path
 
 from verifiable_multi_agent.agents import RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
-from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, Topology
+from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, ContractMessage, Topology
 from verifiable_multi_agent.memory import JsonlProtocolMemory
 from verifiable_multi_agent.profiler import profile_task
 from verifiable_multi_agent.router import explain_topology, select_topology
@@ -48,9 +48,19 @@ class Orchestrator:
         # 阶段 0: 如果有相似任务的协作模式，先注入复用提示
         if prior_protocols:
             trace.messages.append(
-                RuleBasedAgent(AgentRole.PLANNER).run(
-                    f"Reuse protocol memory: {prior_protocols[0]['topology']} for {task}",
-                    trace.messages,
+                ContractMessage(
+                    role=AgentRole.MEMORY,
+                    subtask="检索相似历史协作协议" if _contains_cjk(task) else "Retrieve similar protocol memory",
+                    claim=(
+                        f"命中历史协作协议：{prior_protocols[0]['topology']}"
+                        if _contains_cjk(task)
+                        else f"Found reusable protocol: {prior_protocols[0]['topology']}"
+                    ),
+                    evidence=[f"memory_task={prior_protocols[0]['task']}"],
+                    action="作为路由和执行提示，不直接承担规划角色。"
+                    if _contains_cjk(task)
+                    else "Use as routing and execution hint without impersonating the planner.",
+                    metadata={"protocol_memory": prior_protocols[0]},
                 )
             )
             budget.consume()
@@ -269,4 +279,5 @@ def _role_label(role: AgentRole, task: str) -> str:
         AgentRole.EXECUTOR: "执行角色",
         AgentRole.VERIFIER: "验证角色",
         AgentRole.SYNTHESIZER: "合成角色",
+        AgentRole.MEMORY: "记忆角色",
     }[role]

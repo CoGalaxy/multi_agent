@@ -15,16 +15,7 @@ from __future__ import annotations
 
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, ContractMessage
-
-
-# 所有 LLM 调用的 system prompt 前缀，防止模型发散
-GROUNDING_RULES = (
-    "Ground every claim in the original task. "
-    "Do not introduce a new topic that is absent from the task. "
-    "Give a direct answer first whenever the task is answerable from the task wording or common domain knowledge. "
-    "Do not over-refuse merely because no source document was attached. "
-    "If important details are missing, answer at a safe general level first, then briefly state what would improve precision."
-)
+from verifiable_multi_agent.prompts import prompt_with_context, system_prompt
 
 
 class RuleBasedAgent:
@@ -45,8 +36,8 @@ class RuleBasedAgent:
             claim = f"The task can be handled with {max(1, min(3, len(task) // 60 + 1))} focused step(s)."
             if self.backend:
                 claim = self.backend.complete(
-                    _system_prompt("planning", task, "Return one concise plan claim."),
-                    _prompt_with_context(task, context, extra=stage_note),
+                    system_prompt("planning", task, "Return one concise plan claim."),
+                    prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
             return ContractMessage(
@@ -64,8 +55,8 @@ class RuleBasedAgent:
             claim = f"Candidate answer for task: {task}"
             if self.backend:
                 claim = self.backend.complete(
-                    _system_prompt("execution", task, "Draft a concise candidate answer."),
-                    _prompt_with_context(
+                    system_prompt("execution", task, "Draft a concise candidate answer."),
+                    prompt_with_context(
                         task,
                         context,
                         extra="\n".join(
@@ -91,8 +82,8 @@ class RuleBasedAgent:
             claim = "All prior claims are supported." if not unsupported else "Some claims lack support."
             if self.backend:
                 claim = self.backend.complete(
-                    _system_prompt("verification", task, "Judge whether the trace is supported and on task."),
-                    _prompt_with_context(task, context, extra=stage_note),
+                    system_prompt("verification", task, "Judge whether the trace is supported and on task."),
+                    prompt_with_context(task, context, extra=stage_note),
                     role=self.role.value,
                 )
             return ContractMessage(
@@ -111,7 +102,7 @@ class RuleBasedAgent:
         claim = _latest_claim(context, AgentRole.EXECUTOR) or task
         if self.backend:
             claim = self.backend.complete(
-                _system_prompt(
+                system_prompt(
                     "synthesis",
                     task,
                     (
@@ -121,7 +112,7 @@ class RuleBasedAgent:
                         "Do not describe the internal route; if a procedure is needed, call it a plan, checklist, or steps."
                     ),
                 ),
-                _prompt_with_context(task, context, extra=stage_note),
+                prompt_with_context(task, context, extra=stage_note),
                 role=self.role.value,
             )
         return ContractMessage(
@@ -141,43 +132,3 @@ def _latest_claim(messages: list[ContractMessage], role: AgentRole) -> str | Non
         if message.role == role:
             return message.claim
     return None
-
-
-def _prompt_with_context(task: str, context: list[ContractMessage], extra: str | None = None) -> str:
-    """组装 LLM 输入：原始任务 + 完整协作轨迹 + 可选的计划提示。"""
-    lines = [
-        f"Original task: {task}",
-        "Trace:",
-    ]
-    if not context:
-        lines.append("- No prior messages.")
-    for message in context:
-        lines.append(
-            f"- role={message.role.value}; subtask={message.subtask}; "
-            f"claim={message.claim}; evidence={message.evidence}; action={message.action}"
-        )
-    if extra:
-        lines.append(extra)
-    return "\n".join(lines)
-
-
-def _system_prompt(agent_kind: str, task: str, instruction: str) -> str:
-    return (
-        f"You are a {agent_kind} agent. {instruction} "
-        f"{_language_rule(task)} "
-        f"{GROUNDING_RULES}"
-    )
-
-
-def _language_rule(task: str) -> str:
-    if _contains_cjk(task):
-        return "The original task is in Chinese; respond entirely in Simplified Chinese, including headings and route labels."
-    return "Respond in the same language as the original task."
-
-
-def _route_label(task: str) -> str:
-    return "执行路线" if _contains_cjk(task) else "Execution route"
-
-
-def _contains_cjk(text: str) -> bool:
-    return any("\u4e00" <= char <= "\u9fff" for char in text)

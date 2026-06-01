@@ -18,8 +18,9 @@ from pydantic import BaseModel, Field
 
 
 class AgentRole(str, Enum):
-    """四种角色对应协作流水线的四个阶段。"""
+    """协作流水线中的角色。"""
 
+    MEMORY = "memory"
     PLANNER = "planner"
     EXECUTOR = "executor"
     VERIFIER = "verifier"
