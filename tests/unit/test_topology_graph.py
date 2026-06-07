@@ -76,6 +76,51 @@ def test_tool_execution_graph_includes_mock_tool_executor_message() -> None:
     assert any(message.metadata.get("node_type") == "tool_executor" for message in trace.messages)
 
 
+def test_material_and_tool_graph_augments_evidence_template() -> None:
+    graph = ConstrainedTopologyGenerator().generate(
+        _spec(
+            CapabilityNeeds(
+                planning=True,
+                material_grounding=True,
+                tool_execution=True,
+                verification=True,
+                synthesis=True,
+            ),
+            max_nodes=6,
+        )
+    )
+
+    assert _types(graph) == ["planner", "researcher", "tool_executor", "executor", "verifier", "synthesizer"]
+    assert "base_template=evidence_grounded_template" in graph.generation_reasons
+    assert "augment=insert_tool_executor_before_executor" in graph.generation_reasons
+
+
+def test_comparison_critique_revision_augments_comparison_template() -> None:
+    spec = TopologySpec(
+        task_type=TaskType.COMPARISON,
+        tci=0.5,
+        capability_needs=CapabilityNeeds(
+            planning=True,
+            verification=True,
+            synthesis=True,
+            critique=True,
+            revision=True,
+        ),
+        max_nodes=6,
+        max_edges=5,
+        max_review_loops=0,
+        max_tool_calls=0,
+        generation_reasons=["unit-test"],
+    )
+
+    graph = ConstrainedTopologyGenerator().generate(spec)
+
+    assert _types(graph) == ["planner", "executor", "critic", "reviser", "verifier", "synthesizer"]
+    assert "base_template=comparison_template" in graph.generation_reasons
+    assert "augment=insert_critic_after_executor" in graph.generation_reasons
+    assert "augment=insert_reviser_after_critic" in graph.generation_reasons
+
+
 def test_code_testing_budget_failure_reports_validation_errors() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, code_testing=True, verification=True, synthesis=True), max_nodes=4)

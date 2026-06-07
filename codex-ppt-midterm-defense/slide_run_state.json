@@ -1,0 +1,30 @@
+{
+  "status": "slides_recorded",
+  "history": [
+    {
+      "from": "created",
+      "to": "jobs_prepared",
+      "at": "2026-06-06T14:35:28Z",
+      "note": "prepared slide prompt jobs"
+    },
+    {
+      "from": "jobs_prepared",
+      "to": "blocked",
+      "at": "2026-06-07T03:14:26Z",
+      "note": "slide_05: subagent errored: workspace is out of credits"
+    },
+    {
+      "from": "blocked",
+      "to": "slides_dispatched",
+      "at": "2026-06-07T03:31:24Z",
+      "note": "all slide jobs dispatched"
+    },
+    {
+      "from": "slides_dispatched",
+      "to": "slides_recorded",
+      "at": "2026-06-07T03:31:24Z",
+      "note": "all slide images recorded"
+    }
+  ],
+  "updated_at": "2026-06-07T03:31:24Z"
+}
