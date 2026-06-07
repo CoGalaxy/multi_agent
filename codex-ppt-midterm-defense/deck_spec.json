@@ -1,0 +1,366 @@
+{
+  "deck_name": "codex-ppt-midterm-defense",
+  "language": "Chinese",
+  "goal": "生成一套 12 页中文中期答辩 PPT，说明可验证多 Agent 协同架构原型的研究背景、系统设计、当前实现、测试结果和后续计划。",
+  "selected_image_backend": "built-in image tool",
+  "max_concurrent_slides": 6,
+  "sample_generation_method": {
+    "backend_used": "built-in image tool",
+    "tool_name": "image_gen",
+    "mode": "generate",
+    "prompt_source": "Slide 8 approved sample prompt in current Codex conversation",
+    "size": "16:9 landscape, built-in default",
+    "quality": "built-in default",
+    "approved_sample_path": "origin_image/slide_08.png",
+    "input_context_preparation": "No required source images; generated from text prompt and approved visual style.",
+    "handoff_rule": "Use this same backend/tool/mode; return a blocker if unavailable."
+  },
+  "style": {
+    "name": "学术科技风",
+    "visual_direction": "中文研究型工程项目中期答辩。整体清晰、克制、科技感强，使用结构化信息图、流程图、模块图、代码风格面板和路线图。",
+    "color_palette": "深蓝黑、浅灰白、青绿色强调色，少量琥珀色用于成果和测试证据。避免紫色渐变、装饰光斑和花哨背景。",
+    "typography": "现代中文无衬线。标题大而清楚，正文少量短句，代码标签使用等宽感。中文必须清晰准确。",
+    "texture_and_finish": "干净的矢量信息图质感，轻微网格和细线即可，不使用复杂插画填充。",
+    "copy_rules": "标题和正文直接陈述项目内容。避免排比句、宣传式表达和“不是……而是……”句式。不要把未定稿公式写死。"
+  },
+  "approved_style_reference": {
+    "path": "origin_image/slide_08.png",
+    "role": "approved sample slide style reference",
+    "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+  },
+  "deck_context": {
+    "source_summary": "项目是一个可运行的可验证多 Agent 协作框架原型。README 和代码展示了 TaskProfile、Topology Router、Orchestrator、ContractMessage、Verifier、Trace、Memory、QuantitativeRouter、ConstrainedTopologyGenerator、GraphExecutor 等组件。",
+    "core_claim": "中期阶段完成了可运行原型，系统把任务画像、拓扑路由、合约消息、过程验证、图执行和运行报告连接成一条可测试链路。",
+    "canonical_terms": [
+      "TaskProfile",
+      "ContractMessage",
+      "Topology",
+      "QuantitativeRouter",
+      "TopologySpec",
+      "CollaborationGraph",
+      "GraphExecutor",
+      "ContractReport",
+      "Protocol Memory"
+    ],
+    "implementation_evidence": {
+      "test_result": "49 passed in 2.72s",
+      "main_modules": [
+        "contracts.py",
+        "orchestrator.py",
+        "quantitative_router.py",
+        "topology/generator.py",
+        "topology/executor.py",
+        "verifier.py",
+        "trace.py",
+        "reporting.py",
+        "backends.py"
+      ],
+      "cli_options": [
+        "--contract-report",
+        "--json-trace",
+        "--save-run",
+        "--show-topology",
+        "--router quant"
+      ]
+    }
+  },
+  "slides": [
+    {
+      "number": 1,
+      "title": "可验证多 Agent 协同架构原型",
+      "role": "cover",
+      "intent": "打开中期答辩，展示课题名称和阶段成果。",
+      "key_points": [
+        "面向复杂长程任务的可验证 LLM Agent 与多 Agent 协同架构研究",
+        "当前阶段完成可运行原型",
+        "核心成果：CLI、合约消息、拓扑路由、图执行、测试基线"
+      ],
+      "local_context": {
+        "required_background": "封面应留出姓名、导师、专业、日期等可填写位置。不要编造学校或个人信息。"
+      },
+      "layout": {
+        "composition": "深色科技封面。左侧或中央放主标题，右侧用抽象节点网络表示多 Agent 协作，底部放阶段成果条。",
+        "content_zones": "标题区、课题说明区、阶段成果区、个人信息占位区。"
+      },
+      "visual_elements": {
+        "main_visual": "多节点协作网络、细线连接、合约检查图标、轻微网格背景。",
+        "supporting_elements": "成果标签：可运行 CLI、Quant Router、GraphExecutor、49 passed。"
+      },
+      "constraints": [
+        "中文标题准确。",
+        "保留学生、导师、日期占位。",
+        "不要使用学校或机构 logo。"
+      ]
+    },
+    {
+      "number": 2,
+      "title": "复杂长程任务的协作问题",
+      "role": "context",
+      "intent": "说明课题要处理的任务形态和系统问题。",
+      "key_points": [
+        "复杂任务包含多步骤、多角色、验证和工具调用",
+        "单次回答难以展示中间过程",
+        "多 Agent 协作需要记录每一步依据",
+        "系统需要支持过程追踪和过程验证"
+      ],
+      "layout": {
+        "composition": "三栏问题面板：任务链路、角色协作、过程验证。每栏有一个简洁图标和两行说明。",
+        "content_zones": "顶部标题；中部三栏；底部一句课题切入点。"
+      },
+      "visual_elements": {
+        "main_visual": "从复杂任务到多个 Agent 的分叉图，旁边标注 trace 和 verification。",
+        "supporting_elements": "风险提示小标签，但保持学术克制。"
+      },
+      "constraints": [
+        "不要写排比口号。",
+        "不要出现过多装饰图标。"
+      ]
+    },
+    {
+      "number": 3,
+      "title": "本课题的研究目标",
+      "role": "research goal",
+      "intent": "清楚陈述课题目标。",
+      "key_points": [
+        "建立结构化的 Agent 间通信机制",
+        "根据任务特征选择协作拓扑",
+        "记录可复用的运行轨迹和协议记忆",
+        "用合约验证评估协作过程"
+      ],
+      "layout": {
+        "composition": "中心目标块连接四个能力块，不使用口号式三角排比。",
+        "content_zones": "标题区、中心目标区、四个能力区。"
+      },
+      "visual_elements": {
+        "main_visual": "研究目标框架图，包含 Contract、Router、Trace、Verifier 四个模块。",
+        "supporting_elements": "每个模块用一个简短技术标签。"
+      },
+      "constraints": [
+        "标题和正文直接陈述。",
+        "避免“可追踪、可路由、可验证”这种排比标题。"
+      ]
+    },
+    {
+      "number": 4,
+      "title": "系统总体架构",
+      "role": "architecture",
+      "intent": "展示系统从任务输入到运行记录的完整链路。",
+      "key_points": [
+        "Task Profiler 生成任务画像",
+        "Router 选择执行结构",
+        "Orchestrator 或 GraphExecutor 组织 Agent 执行",
+        "ContractMessage 记录协作过程",
+        "Verifier 输出验证结果",
+        "Trace 和 Memory 保留运行记录"
+      ],
+      "layout": {
+        "composition": "横向流程架构图，节点从左到右排列，底部标注对应源码模块。",
+        "content_zones": "标题区、主流程图区、模块注释区。"
+      },
+      "visual_elements": {
+        "main_visual": "Task -> Profiler -> Router -> Executor -> Contracts -> Verifier -> Trace/Memory。",
+        "supporting_elements": "每个节点下方用小字标注 module 文件名。"
+      },
+      "constraints": [
+        "流程箭头方向清楚。",
+        "不要把节点堆得过密。"
+      ]
+    },
+    {
+      "number": 5,
+      "title": "合约消息机制",
+      "role": "concept explanation",
+      "intent": "解释 ContractMessage 的结构和验证意义。",
+      "key_points": [
+        "ContractMessage 是 Agent 间通信的基本单元",
+        "字段包括 role、subtask、claim、evidence、action、uncertainty",
+        "验证器检查 claim 支撑、证据覆盖和动作完整性",
+        "合约消息为 trace 和报告提供数据基础"
+      ],
+      "layout": {
+        "composition": "左侧数据结构卡片，右侧验证流程卡片，中间用箭头连接。",
+        "content_zones": "标题区、字段区、验证指标区。"
+      },
+      "visual_elements": {
+        "main_visual": "ContractMessage 字段剖面图。",
+        "supporting_elements": "support_rate、evidence_coverage、action_completeness 三个指标标签。"
+      },
+      "constraints": [
+        "字段名按代码准确拼写。",
+        "不要写长段落。"
+      ]
+    },
+    {
+      "number": 6,
+      "title": "任务画像与基础拓扑路由",
+      "role": "routing design",
+      "intent": "说明 TaskProfile 和三类基础拓扑。",
+      "key_points": [
+        "TaskProfile 使用 tool_need、uncertainty、step_count、risk 表示任务特征",
+        "基础拓扑包括 SINGLE_AGENT、SUPERVISOR_WORKER、REVIEW_LOOP",
+        "简单任务走直接执行和验证",
+        "中等复杂任务加入 Planner",
+        "高风险任务进入执行和验证循环"
+      ],
+      "layout": {
+        "composition": "左侧四维任务画像仪表，右侧三条拓扑路径。",
+        "content_zones": "画像区、拓扑路径区、适用条件区。"
+      },
+      "visual_elements": {
+        "main_visual": "四个任务画像指标卡 + 三条 Agent 顺序路径。",
+        "supporting_elements": "Executor、Planner、Verifier 标签。"
+      },
+      "constraints": [
+        "拓扑名称用代码原名。",
+        "路径箭头可读。"
+      ]
+    },
+    {
+      "number": 7,
+      "title": "编排器执行流程",
+      "role": "process",
+      "intent": "说明 Orchestrator.solve 的主控流程。",
+      "key_points": [
+        "Orchestrator.solve 串联画像、路由、执行、验证和存储",
+        "协议记忆用于复用相似任务的协作模式",
+        "预算机制限制运行步数",
+        "验证失败时可升级到 REVIEW_LOOP",
+        "Synthesizer 输出最终答案"
+      ],
+      "layout": {
+        "composition": "纵向主控流程图，旁边加 Agent 角色泳道。",
+        "content_zones": "标题区、流程区、角色区。"
+      },
+      "visual_elements": {
+        "main_visual": "Profile -> Route -> Execute -> Verify -> Store。",
+        "supporting_elements": "Budget、Memory、Escalation、Synthesizer 标注。"
+      },
+      "constraints": [
+        "不要使用“不是而是”句式。",
+        "显示 REVIEW_LOOP 升级为流程分支。"
+      ]
+    },
+    {
+      "number": 8,
+      "title": "定量 Router 设计",
+      "role": "data evidence",
+      "intent": "作为已批准样张，展示 TCI 相关因素、TopologySpec 和能力需求。",
+      "key_points": [
+        "QuantitativeRouter 基于复杂度特征生成 TopologySpec",
+        "TCI 与任务跨度、依赖深度、工具负担、证据负担、不确定性和风险相关",
+        "CapabilityNeeds 描述协作能力需求",
+        "缺少给定材料时返回 blocked 状态和 block_reason"
+      ],
+      "layout": {
+        "composition": "使用已批准样张，不重新生成。",
+        "content_zones": "TCI 因素区、TopologySpec 区、CapabilityNeeds 区。"
+      },
+      "visual_elements": {
+        "main_visual": "已批准样张：TCI 因素连接图 + TopologySpec 卡片 + 能力开关矩阵。",
+        "supporting_elements": "无固定公式和权重。"
+      },
+      "constraints": [
+        "不要展示固定 TCI 公式。",
+        "不要展示数值权重或系数。"
+      ],
+      "sample_approved": true
+    },
+    {
+      "number": 9,
+      "title": "协作图生成与执行",
+      "role": "architecture",
+      "intent": "说明 Quant 路径从规格到图执行的阶段。",
+      "key_points": [
+        "Quant 路径使用 TopologySpec -> CollaborationGraph -> GraphExecutor",
+        "ConstrainedTopologyGenerator 根据能力需求选择节点",
+        "GraphExecutor 按顺序 DAG 执行节点",
+        "运行记录包含 executed_nodes、skipped_nodes、review_loops_used 和 execution_mode",
+        "Review loop 受 max_review_loops 约束"
+      ],
+      "layout": {
+        "composition": "横向图执行管线，上方是主要节点，下方是示例输出终端条。",
+        "content_zones": "标题区、管线区、示例输出区、限制说明区。"
+      },
+      "visual_elements": {
+        "main_visual": "TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer。",
+        "supporting_elements": "示例：Planner -> Executor -> Verifier -> Synthesizer。"
+      },
+      "constraints": [
+        "图执行路径清晰。",
+        "不写固定公式。"
+      ]
+    },
+    {
+      "number": 10,
+      "title": "CLI 运行报告",
+      "role": "case study",
+      "intent": "展示系统如何输出可观察运行记录。",
+      "key_points": [
+        "CLI 提供 --contract-report、--json-trace、--save-run、--show-topology",
+        "Contract report 展示任务画像、拓扑、消息数量、support_rate 和 accepted 状态",
+        "JSON trace 保留完整运行记录",
+        "Save-run 将 trace 写入运行目录"
+      ],
+      "layout": {
+        "composition": "终端窗口风格主视觉，右侧或底部放字段解释。",
+        "content_zones": "标题区、命令区、报告摘要区、字段解释区。"
+      },
+      "visual_elements": {
+        "main_visual": "命令示例：vma \"比较 AutoGen 和 CAMEL...\" --backend mock --router quant --show-topology --contract-report。",
+        "supporting_elements": "Task Profile、Topology、Contract Report、Graph Execution 四个摘要块。"
+      },
+      "constraints": [
+        "命令文本不要太长导致不可读。",
+        "报告字段以摘要形式呈现。"
+      ]
+    },
+    {
+      "number": 11,
+      "title": "当前实现与测试结果",
+      "role": "data evidence",
+      "intent": "展示代码模块和测试覆盖。",
+      "key_points": [
+        "主要模块包括 contracts、orchestrator、quantitative_router、topology、verifier、trace、backends",
+        "测试覆盖 CLI、router、graph、trace、memory、orchestrator",
+        "当前本地测试结果为 49 passed",
+        "项目支持 mock、Ollama、vLLM、DeepSeek 等后端入口"
+      ],
+      "layout": {
+        "composition": "模块地图 + 测试结果证据条。左侧模块矩阵，右侧测试结果和覆盖范围。",
+        "content_zones": "标题区、模块区、测试区。"
+      },
+      "visual_elements": {
+        "main_visual": "模块网格：contracts、orchestrator、quantitative_router、topology、verifier、trace、backends。",
+        "supporting_elements": "测试结果徽标：49 passed in 2.72s。"
+      },
+      "constraints": [
+        "测试数字必须写为 49 passed。",
+        "不要夸大实验结论。"
+      ]
+    },
+    {
+      "number": 12,
+      "title": "后续工作计划",
+      "role": "timeline",
+      "intent": "收束中期答辩并说明下一阶段工作。",
+      "key_points": [
+        "接入真实 LLM 后端并评估稳定性",
+        "增强协作图的条件分支、工具调用和失败重试",
+        "设计 single-agent、固定多 Agent、quant graph 路径的对比实验",
+        "完成论文实验章节和系统局限性分析"
+      ],
+      "layout": {
+        "composition": "四阶段路线图，从左到右推进。",
+        "content_zones": "标题区、路线图区、结尾说明区。"
+      },
+      "visual_elements": {
+        "main_visual": "模型接入 -> 图执行增强 -> 对比实验 -> 论文完善。",
+        "supporting_elements": "每阶段一个简洁节点，使用青绿和琥珀强调。"
+      },
+      "constraints": [
+        "计划表述务实。",
+        "不要写成宣传口号。"
+      ]
+    }
+  ]
+}

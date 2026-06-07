@@ -59,6 +59,8 @@ def solve(
     json_trace: bool = typer.Option(False, "--json-trace", help="Output the complete run trace as JSON."),
     contract_report: bool = typer.Option(False, "--contract-report", help="Output a human-readable contract report."),
     save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
+    router: str = typer.Option("legacy", "--router", help="Router mode: legacy, rule, or quant."),
+    show_topology: bool = typer.Option(False, "--show-topology", help="Show generated graph topology when available."),
 ) -> None:
     load_env_file()
     llm = None
@@ -86,7 +88,9 @@ def solve(
         )
     elif backend != "mock":
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
-    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler).solve(task)
+    if router not in {"legacy", "rule", "quant"}:
+        raise typer.BadParameter("router must be one of: legacy, rule, quant.")
+    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler, router_mode=router).solve(task)
     run_trace = build_run_trace(trace)
     saved_path = save_run_trace(run_trace) if save_run else None
 
@@ -95,6 +99,8 @@ def solve(
         return
 
     if contract_report:
+        if show_topology:
+            _print_generated_topology(trace)
         console.print(format_contract_report(trace))
         if saved_path:
             console.print(f"\nSaved run: {saved_path}")
@@ -112,6 +118,10 @@ def solve(
     console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
     console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
     console.print(f"[bold]{labels['complexity']}:[/bold] {trace.profile.complexity}")
+    if show_topology:
+        _print_generated_topology(trace)
+    if trace.metadata.get("topology_spec"):
+        _print_quant_router(trace.metadata["topology_spec"])
     console.print(f"[bold]{labels['accepted']}:[/bold] {trace.verification.accepted if trace.verification else False}")
     console.print(f"[bold]{labels['execution_summary']}:[/bold]")
     for item in trace.execution_summary:
@@ -126,6 +136,36 @@ def solve(
         support = "是" if zh and message.has_support else "否" if zh else "yes" if message.has_support else "no"
         table.add_row(message.role.value, message.subtask, support, message.action)
     console.print(table)
+
+
+def _print_quant_router(topology_spec: dict) -> None:
+    needs = [name for name, enabled in topology_spec["capability_needs"].items() if enabled]
+    console.print("[bold]TCI:[/bold] " + f"{topology_spec['tci']:.3f}")
+    console.print("[bold]capability_needs:[/bold] " + ", ".join(needs))
+    console.print("[bold]generation_reasons:[/bold]")
+    for reason in topology_spec["generation_reasons"]:
+        console.print(f"- {reason}")
+
+
+def _print_generated_topology(trace) -> None:
+    generated = trace.metadata.get("generated_topology")
+    execution = trace.metadata.get("graph_execution")
+    if not generated:
+        return
+    console.print("[bold][Generated Topology][/bold]")
+    node_labels = [node["label"] or node["type"] for node in generated.get("nodes", [])]
+    console.print(" → ".join(node_labels) if node_labels else "(blocked)")
+    console.print(f"blocked={generated.get('blocked')}")
+    if generated.get("block_reason"):
+        console.print(f"block_reason={generated.get('block_reason')}")
+    if generated.get("validation_errors"):
+        console.print(f"validation_errors={generated.get('validation_errors')}")
+    if execution:
+        console.print("[bold][Graph Execution][/bold]")
+        console.print(f"executed_nodes={execution.get('executed_nodes', [])}")
+        console.print(f"skipped_nodes={execution.get('skipped_nodes', [])}")
+        console.print(f"review_loops_used={execution.get('review_loops_used', 0)}")
+        console.print(f"execution_mode={execution.get('execution_mode')}")
 
 def _contains_cjk(text: str) -> bool:
     return any("\u4e00" <= char <= "\u9fff" for char in text)

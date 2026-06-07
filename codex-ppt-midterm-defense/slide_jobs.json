@@ -1,0 +1,486 @@
+{
+  "run_status": "slides_recorded",
+  "deck_name": "codex-ppt-midterm-defense",
+  "selected_backend": "built-in image tool",
+  "sample_generation_method": {
+    "backend_used": "built-in image tool",
+    "tool_name": "image_gen",
+    "mode": "generate",
+    "prompt_source": "Slide 8 approved sample prompt in current Codex conversation",
+    "size": "16:9 landscape, built-in default",
+    "quality": "built-in default",
+    "approved_sample_path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+    "input_context_preparation": "No required source images; generated from text prompt and approved visual style.",
+    "handoff_rule": "Use this same backend/tool/mode; return a blocker if unavailable."
+  },
+  "max_concurrent_slides": 6,
+  "slides": [
+    {
+      "slide_id": "slide_01",
+      "number": 1,
+      "title": "可验证多 Agent 协同架构原型",
+      "job": "prompts/slide_01.json",
+      "out": "origin_image/slide_01.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019e9d61-ca50-7803-967c-7ce67e0412c4",
+        "agent_nickname": "Pasteur",
+        "prompt": "prompts/slide_01.json",
+        "prompt_sha256": "e7bfb1a5716b4e61b288c9620eb12809fa865fd8646e29c1a5c6063af8538549",
+        "dispatched_at": "2026-06-07T03:13:37Z"
+      },
+      "result": {
+        "agent_id": "019e9d61-ca50-7803-967c-7ce67e0412c4",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9d61-ca50-7803-967c-7ce67e0412c4\\ig_09e357c35534b333016a2431d7efdc8191944daae8238567fc.png",
+        "selected_source_sha256": "25a451ea08afcb3ba580aa81c4bb910bc6a6034c0967a04bf37419cb40e5fc29",
+        "final_image": "origin_image/slide_01.png",
+        "final_image_sha256": "25a451ea08afcb3ba580aa81c4bb910bc6a6034c0967a04bf37419cb40e5fc29",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Generated 16:9 cover matches the approved tech-academic style, keeps placeholders, and the required Chinese text is legible.",
+        "recorded_at": "2026-06-07T03:14:05Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_02",
+      "number": 2,
+      "title": "复杂长程任务的协作问题",
+      "job": "prompts/slide_02.json",
+      "out": "origin_image/slide_02.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019e9d62-51d5-7522-89e9-dd79ad758db6",
+        "agent_nickname": "Lagrange",
+        "prompt": "prompts/slide_02.json",
+        "prompt_sha256": "f72413f547a31d511d8d37a2062cc19b7f6d110d9924f29d352a9a6e62a4de28",
+        "dispatched_at": "2026-06-07T03:13:37Z"
+      },
+      "result": {
+        "agent_id": "019e9d62-51d5-7522-89e9-dd79ad758db6",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9d62-51d5-7522-89e9-dd79ad758db6\\ig_0af2b13e9753e9bd016a24322626dc8191a016bbc33e3d77dc.png",
+        "selected_source_sha256": "31f9b6c5e2d4c0f4b61d14ee6c466bb263bb9967fe3898dc501c7a3149b879e5",
+        "final_image": "origin_image/slide_02.png",
+        "final_image_sha256": "31f9b6c5e2d4c0f4b61d14ee6c466bb263bb9967fe3898dc501c7a3149b879e5",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Text is legible, the three-column problem layout matches the requested academic tech style, and no slide number or watermark is present.",
+        "recorded_at": "2026-06-07T03:14:05Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_03",
+      "number": 3,
+      "title": "本课题的研究目标",
+      "job": "prompts/slide_03.json",
+      "out": "origin_image/slide_03.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019e9d62-be5b-7951-ad47-efec81f6717d",
+        "agent_nickname": "Euler",
+        "prompt": "prompts/slide_03.json",
+        "prompt_sha256": "6d2e70d1d08eaac5129aed05542860170c7f19799d198c329f5572bfe1360e71",
+        "dispatched_at": "2026-06-07T03:13:38Z"
+      },
+      "result": {
+        "agent_id": "019e9d62-be5b-7951-ad47-efec81f6717d",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9d62-be5b-7951-ad47-efec81f6717d\\ig_043e5f4e84c02246016a243213ab188191ace0d13b46f88d82.png",
+        "selected_source_sha256": "73324c5789473db9a775d09e535d9a5f0d9f4b8d4c0fc439bd8bdecac9ffb93a",
+        "final_image": "origin_image/slide_03.png",
+        "final_image_sha256": "73324c5789473db9a775d09e535d9a5f0d9f4b8d4c0fc439bd8bdecac9ffb93a",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Generated slide matches the requested title, four-module research-goal framework, and approved navy/teal academic-tech style; Chinese text is legible.",
+        "recorded_at": "2026-06-07T03:14:05Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_04",
+      "number": 4,
+      "title": "系统总体架构",
+      "job": "prompts/slide_04.json",
+      "out": "origin_image/slide_04.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "019e9d63-39b6-7ff0-8640-2efa746f1ff4",
+        "agent_nickname": "Kuhn",
+        "prompt": "prompts/slide_04.json",
+        "prompt_sha256": "2d88bc7098de0dadd6f4f3fe2805575e4b71125d0df2c19f7bdf3265e0e45e53",
+        "dispatched_at": "2026-06-07T03:13:38Z"
+      },
+      "result": {
+        "agent_id": "019e9d63-39b6-7ff0-8640-2efa746f1ff4",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9d63-39b6-7ff0-8640-2efa746f1ff4\\ig_0fd75e1da145f03a016a2432239dd08191883e9854260857bc.png",
+        "selected_source_sha256": "ad1c99dfa23d26f516fb9f31d6c2f4919341e30004e6ea884a25a9c8883627dc",
+        "final_image": "origin_image/slide_04.png",
+        "final_image_sha256": "ad1c99dfa23d26f516fb9f31d6c2f4919341e30004e6ea884a25a9c8883627dc",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Generated 16:9 slide matches the approved teal/navy academic tech style, with clear left-to-right architecture flow and legible Chinese labels.",
+        "recorded_at": "2026-06-07T03:14:05Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_05",
+      "number": 5,
+      "title": "合约消息机制",
+      "job": "prompts/slide_05.json",
+      "out": "origin_image/slide_05.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main-after-subagent-blocker",
+        "prompt": "prompts/slide_05.json",
+        "prompt_sha256": "6bd0276c38843362795ada4057d6e2fa6df67c5128ab0e2380747e9a5642ee0d",
+        "dispatched_at": "2026-06-07T03:16:48Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e21de4208191876681fc71f9695b.png",
+        "selected_source_sha256": "ac054d35c204b59b2b8615d1f4b0c7953687a0b1080081b2023f09e3a13ab540",
+        "final_image": "origin_image/slide_05.png",
+        "final_image_sha256": "ac054d35c204b59b2b8615d1f4b0c7953687a0b1080081b2023f09e3a13ab540",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent generated after subagent credit blocker; ContractMessage fields and verification checks are readable and match approved academic-tech style.",
+        "recorded_at": "2026-06-07T03:16:48Z"
+      },
+      "blocker": {
+        "previous_blocker": "subagent errored: workspace is out of credits; recovered for parent-main generation"
+      }
+    },
+    {
+      "slide_id": "slide_06",
+      "number": 6,
+      "title": "任务画像与基础拓扑路由",
+      "job": "prompts/slide_06.json",
+      "out": "origin_image/slide_06.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main-after-subagent-blocker",
+        "prompt": "prompts/slide_06.json",
+        "prompt_sha256": "1c64652671ee1e96784a3019f849201d83656773ffd712b2d9289e89c82cac74",
+        "dispatched_at": "2026-06-07T03:18:17Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e2a7f8448191955b464ca8c6365e.png",
+        "selected_source_sha256": "c3b2395d0d082a5df03193309e4de4f8151c2b08928021f61e79e1d1b873a7f1",
+        "final_image": "origin_image/slide_06.png",
+        "final_image_sha256": "c3b2395d0d082a5df03193309e4de4f8151c2b08928021f61e79e1d1b873a7f1",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent generated after subagent credit blocker; TaskProfile metrics and three topology lanes are readable and match approved academic-tech style.",
+        "recorded_at": "2026-06-07T03:18:17Z"
+      },
+      "blocker": {
+        "previous_blocker": "subagent errored: workspace is out of credits; recovered for parent-main generation"
+      }
+    },
+    {
+      "slide_id": "slide_07",
+      "number": 7,
+      "title": "编排器执行流程",
+      "job": "prompts/slide_07.json",
+      "out": "origin_image/slide_07.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main",
+        "prompt": "prompts/slide_07.json",
+        "prompt_sha256": "4e26c634b52d32d8dc8fe3071f6d04d136e9f7829ce72cb67cda34ae2d1eafe0",
+        "dispatched_at": "2026-06-07T03:20:12Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e306631881918859b6d245e8ba06.png",
+        "selected_source_sha256": "3b1b004596a818e574fd9c4f4194f4021ab6f322947a0f6cc2f5624bf95c591c",
+        "final_image": "origin_image/slide_07.png",
+        "final_image_sha256": "3b1b004596a818e574fd9c4f4194f4021ab6f322947a0f6cc2f5624bf95c591c",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent generated; visual style matches sample and process is readable. Minor wording issue: Profile card subtitle is close to memory wording and can be explained verbally.",
+        "recorded_at": "2026-06-07T03:20:13Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_08",
+      "number": 8,
+      "title": "定量 Router 设计",
+      "job": "prompts/slide_08.json",
+      "out": "origin_image/slide_08.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "accepted",
+      "dispatch": null,
+      "result": {
+        "final_image": "origin_image/slide_08.png",
+        "accepted_sample": true
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_09",
+      "number": 9,
+      "title": "协作图生成与执行",
+      "job": "prompts/slide_09.json",
+      "out": "origin_image/slide_09.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main",
+        "prompt": "prompts/slide_09.json",
+        "prompt_sha256": "da49b29c5df3d31082c3366d39034c81111224b73a1ed8feafb283fb1930306f",
+        "dispatched_at": "2026-06-07T03:22:07Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e37b6e9c8191bfd0ff0b41c851c7.png",
+        "selected_source_sha256": "0160665a64fbd29bc2e9486ba3f051768e74f51a58a2e0d5fbf6fbc51d42f0e0",
+        "final_image": "origin_image/slide_09.png",
+        "final_image_sha256": "0160665a64fbd29bc2e9486ba3f051768e74f51a58a2e0d5fbf6fbc51d42f0e0",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent generated; topology pipeline, example graph, and execution metadata are readable and match approved style.",
+        "recorded_at": "2026-06-07T03:22:07Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_10",
+      "number": 10,
+      "title": "CLI 运行报告",
+      "job": "prompts/slide_10.json",
+      "out": "origin_image/slide_10.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main",
+        "prompt": "prompts/slide_10.json",
+        "prompt_sha256": "c9e61f7ecd81741cabf88fb72a70ac665534adca58e69662702abb28e9c9cd19",
+        "dispatched_at": "2026-06-07T03:26:12Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e46236dc8191bdcea05149650702.png",
+        "selected_source_sha256": "caa00bc222dd3cb2856e9dcded3d1b1ed52288299b750ab94005b729c3341971",
+        "final_image": "origin_image/slide_10.png",
+        "final_image_sha256": "caa00bc222dd3cb2856e9dcded3d1b1ed52288299b750ab94005b729c3341971",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent regenerated to avoid fabricated numeric metrics; CLI sections and option cards are readable and match approved style.",
+        "recorded_at": "2026-06-07T03:26:12Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_11",
+      "number": 11,
+      "title": "当前实现与测试结果",
+      "job": "prompts/slide_11.json",
+      "out": "origin_image/slide_11.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main",
+        "prompt": "prompts/slide_11.json",
+        "prompt_sha256": "a0e0728c33062ddf2ef36bb014b8fdc9ab1cfd9ad9f36c1d97aea1f283be325a",
+        "dispatched_at": "2026-06-07T03:29:35Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e53a54948191a35f9f5453fd9f6a.png",
+        "selected_source_sha256": "56b7781b67c149459964961c659bddb1ae6e2de76a24c1df92241adef5c451f4",
+        "final_image": "origin_image/slide_11.png",
+        "final_image_sha256": "56b7781b67c149459964961c659bddb1ae6e2de76a24c1df92241adef5c451f4",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent regenerated; exact 49 passed is visible on one line, module labels and coverage tags are readable, and icons are abstract technical marks.",
+        "recorded_at": "2026-06-07T03:29:35Z"
+      },
+      "blocker": null
+    },
+    {
+      "slide_id": "slide_12",
+      "number": 12,
+      "title": "后续工作计划",
+      "job": "prompts/slide_12.json",
+      "out": "origin_image/slide_12.png",
+      "input_images": [
+        {
+          "path": "E:\\desktop\\毕设\\中期\\code\\codex-ppt-midterm-defense\\origin_image\\slide_08.png",
+          "role": "approved sample slide style reference",
+          "fidelity": "match style only; do not copy layout or content unless the slide role fits"
+        }
+      ],
+      "requires_context_images": true,
+      "status": "recorded",
+      "dispatch": {
+        "agent_id": "parent-main",
+        "agent_nickname": "parent-main",
+        "prompt": "prompts/slide_12.json",
+        "prompt_sha256": "b3b46c0adc217c9ddc3703b916fa5a7df3ba86990d13bc1248c76b9206f1c54a",
+        "dispatched_at": "2026-06-07T03:31:24Z"
+      },
+      "result": {
+        "agent_id": "parent-main",
+        "backend_used": "built-in image tool",
+        "selected_source": "C:\\Users\\22708\\.codex\\generated_images\\019e9610-af2c-79d2-ad4b-339f76af55cc\\ig_0ee398af4dc4bb0e016a24e5b471388191859126b10fe7ea76.png",
+        "selected_source_sha256": "8d8af80b4018c296f6b3fb881351fe35fb2b59723b23a9d3d32230747ea13e24",
+        "final_image": "origin_image/slide_12.png",
+        "final_image_sha256": "8d8af80b4018c296f6b3fb881351fe35fb2b59723b23a9d3d32230747ea13e24",
+        "expected_backend": "built-in image tool",
+        "expected_backend_labels": [
+          "built-in image tool",
+          "image_gen"
+        ],
+        "sample_generation_method_matched": true,
+        "qa_note": "Parent generated; four-stage roadmap is readable, aligned with approved style, and contains no fake dates.",
+        "recorded_at": "2026-06-07T03:31:24Z"
+      },
+      "blocker": null
+    }
+  ],
+  "updated_at": "2026-06-07T03:31:24Z"
+}

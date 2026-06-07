@@ -54,8 +54,7 @@ def format_contract_report(trace: AgentTrace) -> str:
     profile = trace.profile
     accepted = trace.verification.accepted if trace.verification else False
     violations = report.model_dump(mode="json")["violations"]
-    return "\n".join(
-        [
+    sections = [
             "[Task Profile]",
             (
                 f"tool_need={profile.tool_need:.2f} | "
@@ -67,6 +66,31 @@ def format_contract_report(trace: AgentTrace) -> str:
             "[Topology]",
             f"selected={trace.topology.name}",
             f"reason={trace.topology_reason or ''}",
+        ]
+    topology_spec = trace.metadata.get("topology_spec")
+    if topology_spec:
+        needs = topology_spec["capability_needs"]
+        enabled_needs = [name for name, enabled in needs.items() if enabled]
+        sections.extend(
+            [
+                "",
+                "[Quantitative Router]",
+                f"task_type={topology_spec['task_type']}",
+                f"tci={topology_spec['tci']:.3f}",
+                f"capability_needs={enabled_needs}",
+                (
+                    f"max_nodes={topology_spec['max_nodes']} | "
+                    f"max_edges={topology_spec['max_edges']} | "
+                    f"max_review_loops={topology_spec['max_review_loops']} | "
+                    f"max_tool_calls={topology_spec['max_tool_calls']}"
+                ),
+                f"blocked={topology_spec['blocked']}",
+                f"block_reason={topology_spec['block_reason']}",
+                f"generation_reasons={topology_spec['generation_reasons']}",
+            ]
+        )
+    sections.extend(
+        [
             "",
             "[Contract Report]",
             f"messages={report.total_messages}",
@@ -81,6 +105,7 @@ def format_contract_report(trace: AgentTrace) -> str:
             trace.final_answer or "",
         ]
     )
+    return "\n".join(sections)
 
 
 def _role_name(role: str) -> str:
