@@ -90,7 +90,27 @@ def infer_complexity_features(task: str, profile: TaskProfile) -> ComplexityFeat
 
 def infer_input_requirements(task: str) -> InputRequirements:
     text = task.lower()
-    requires_material = _contains_any(text, ["given material", "provided material", "根据给定材料", "给定材料", "根据材料"])
+    requires_material = _contains_any(
+        text,
+        [
+            "given material",
+            "provided material",
+            "provided context",
+            "rag",
+            "corpus",
+            "document collection",
+            "根据给定材料",
+            "给定材料",
+            "根据材料",
+            "根据以下材料",
+            "以下材料",
+            "材料：",
+            "资料库",
+            "文档库",
+            "检索材料",
+            "rag资料",
+        ],
+    )
     material_provided = not requires_material or _has_inline_material(task)
     requires_external_query = _contains_any(text, ["query", "search", "lookup", "查询", "搜索", "检索"])
     requires_database = _contains_any(text, ["database", "db", "数据库", "订单"])
@@ -119,5 +139,20 @@ def _contains_any(text: str, needles: list[str]) -> bool:
 
 
 def _has_inline_material(task: str) -> bool:
-    markers = ["：", ":", "\n", "材料如下", "如下材料", "AutoGen：", "CAMEL："]
-    return any(marker in task for marker in markers)
+    lower_task = task.lower()
+    markers = [
+        "：",
+        ":",
+        "\n",
+        "材料如下",
+        "如下材料",
+        "以下材料",
+        "材料：",
+        "资料库",
+        "文档库",
+        "rag",
+        "corpus",
+        "AutoGen：",
+        "CAMEL：",
+    ]
+    return any(marker.lower() in lower_task for marker in markers)

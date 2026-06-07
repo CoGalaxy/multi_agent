@@ -27,6 +27,7 @@ from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, Cont
 from verifiable_multi_agent.memory import JsonlProtocolMemory
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
 from verifiable_multi_agent.quantitative_router import QuantitativeRouter, explain_topology_spec, topology_from_spec
+from verifiable_multi_agent.rag import SimpleRagRetriever
 from verifiable_multi_agent.router import explain_topology, select_topology
 from verifiable_multi_agent.topology.executor import GraphExecutor
 from verifiable_multi_agent.topology.generator import ConstrainedTopologyGenerator
@@ -40,11 +41,13 @@ class Orchestrator:
         backend: LlmBackend | None = None,
         profiler: LlmProfiler | None = None,
         router_mode: str = "legacy",
+        rag_corpus_path: Path | None = None,
     ) -> None:
         self.memory = JsonlProtocolMemory(memory_path or Path("data/protocol_memory.jsonl"))
         self.backend = backend
         self.profiler = profiler
         self.router_mode = router_mode
+        self.retriever = SimpleRagRetriever(rag_corpus_path) if rag_corpus_path else None
         self._semantic = SemanticVerifier(backend) if (backend and backend.is_real_llm) else None
 
     def solve(self, task: str, budget: Budget | None = None) -> AgentTrace:
@@ -60,7 +63,7 @@ class Orchestrator:
             topology = topology_from_spec(topology_spec)
             topology_reason = explain_topology_spec(topology_spec)
             graph = ConstrainedTopologyGenerator().generate(topology_spec)
-            trace = GraphExecutor(backend=self.backend).execute(
+            trace = GraphExecutor(backend=self.backend, retriever=self.retriever).execute(
                 task=task,
                 graph=graph,
                 profile=profile,

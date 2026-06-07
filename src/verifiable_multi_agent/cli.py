@@ -61,6 +61,7 @@ def solve(
     save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
     router: str = typer.Option("legacy", "--router", help="Router mode: legacy, rule, or quant."),
     show_topology: bool = typer.Option(False, "--show-topology", help="Show generated graph topology when available."),
+    rag_corpus: Path = typer.Option(Path("data/rag_corpus.jsonl"), "--rag-corpus", help="Local JSONL corpus for RAG evidence retrieval."),
 ) -> None:
     load_env_file()
     llm = None
@@ -90,7 +91,13 @@ def solve(
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
     if router not in {"legacy", "rule", "quant"}:
         raise typer.BadParameter("router must be one of: legacy, rule, quant.")
-    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler, router_mode=router).solve(task)
+    trace = Orchestrator(
+        memory_path=memory,
+        backend=llm,
+        profiler=profiler,
+        router_mode=router,
+        rag_corpus_path=rag_corpus,
+    ).solve(task)
     run_trace = build_run_trace(trace)
     saved_path = save_run_trace(run_trace) if save_run else None
 
