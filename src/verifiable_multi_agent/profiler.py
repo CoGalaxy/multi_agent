@@ -44,9 +44,12 @@ COMPLEXITY_HINTS = {
 #   - 含主观/定性判断的任务 → 验证难（没有唯一正确答案）
 #   - 含"比较""评估""建议"等 → 需要多维度交叉验证
 #   - 含安全/风险/合规 → 输出正确性难以自动验证
+#   - 含核查/验证/证伪 → 任务本身要求事实核查，verifiability 必然高
 VERIFIABILITY_HINTS = {
     # 中文 — 需要验证/审查
     "验证", "检查", "审查", "审计", "核验", "确认", "测试",
+    "核查", "是否正确", "反驳", "证伪", "事实核查",
+    "确认来源", "给出证据",
     # 中文 — 主观/定性（难验证）
     "比较", "对比", "评估", "建议", "推荐", "分析", "判断",
     "研究", "探索", "调查", "设计", "优化",
@@ -57,6 +60,7 @@ VERIFIABILITY_HINTS = {
     "加密", "删除", "支付", "医疗", "法律", "生产",
     # 英文
     "verify", "validate", "check", "audit", "confirm", "test",
+    "fact-check", "falsify", "verify the claim",
     "compare", "evaluate", "recommend", "analyze", "judge",
     "research", "investigate", "explore", "design", "optimize",
     "maybe", "perhaps", "latest", "current",
@@ -104,7 +108,8 @@ def profile_task(task: str) -> TaskProfile:
     # verifiability: 关键词命中 + 是否包含"比较/验证/评估"类强信号
     #   强信号词直接拉高 verifiability
     strong_signals = {"比较", "对比", "验证", "审查", "评估", "compare", "verify", "evaluate", "audit",
-                      "安全", "风险", "合规", "安全约束", "隐私", "security", "safety", "risk", "compliance"}
+                      "安全", "风险", "合规", "安全约束", "隐私", "security", "safety", "risk", "compliance",
+                      "核查", "是否正确", "反驳", "证伪", "事实核查", "fact-check", "falsify"}
     has_strong_signal = bool(all_hints & strong_signals)
     verifiability = round(min(verifiability_hits / 3, 1.0) if has_strong_signal else min(verifiability_hits / 5, 1.0), 3)
 
@@ -126,6 +131,16 @@ Dimensions:
   need for multi-dimensional cross-checking, absence of a single correct answer.
   (输出有多难验证其正确性？考虑：是否主观判断、是否比较/评估类任务、是否需要多维度交叉验证)
 
+CRITICAL verifiability rules:
+- If the task asks to check/verify/falsify/audit a claim → verifiability >= 0.6
+  (如果任务要求核查/验证/证伪/审计某个说法 → verifiability >= 0.6)
+- If the task asks to confirm whether something is true → verifiability >= 0.6
+  (如果任务要求确认某事是否属实 → verifiability >= 0.6)
+- If the task is purely describe/explain/summarize → verifiability may be low
+  (如果任务只是描述/解释/总结 → verifiability 可以较低)
+- If the task contains 核查/验证/是否正确/反驳/证伪 → verifiability >= 0.6
+  (If task contains words like verify/check/audit/falsify in any language → verifiability >= 0.6)
+
 Examples:
 1. Say hello → {"complexity": 0.0, "verifiability": 0.0}
 2. 打个招呼 → {"complexity": 0.0, "verifiability": 0.0}
@@ -133,8 +148,10 @@ Examples:
 4. Compare AutoGen and CAMEL architectures → {"complexity": 0.55, "verifiability": 0.7}
 5. 比较 AutoGen 和 CAMEL 的架构差异并给出适用场景 → {"complexity": 0.6, "verifiability": 0.75}
 6. 删除生产数据库中的用户数据并验证备份 → {"complexity": 0.45, "verifiability": 0.85}
-7. Research latest AI trends and write a report → {"complexity": 0.65, "verifiability": 0.55}
-8. 设计一个复杂的多智能体协作系统，包括任务分配、通信协议和冲突解决 → {"complexity": 0.85, "verifiability": 0.7}
+7. 请验证以下说法是否正确：RAG 可以消除幻觉 → {"complexity": 0.4, "verifiability": 0.85}
+8. 请核查：MetaGPT 是否使用了 ContractMessage → {"complexity": 0.3, "verifiability": 0.8}
+9. 设计一个复杂的多智能体协作系统 → {"complexity": 0.85, "verifiability": 0.7}
+10. 用一句话总结什么是 Chain-of-Thought → {"complexity": 0.05, "verifiability": 0.05}
 
 Now classify: "{task}"
 
