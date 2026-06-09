@@ -1,144 +1,164 @@
 # Verifiable Multi-Agent Scaffold
 
-This repository is the first runnable baseline for the new thesis direction:
-
 > 面向复杂长程任务的可验证 LLM Agent 与多 Agent 协同架构研究
 
-The current version is intentionally small. It runs without a model API and keeps the core research objects explicit:
+当前版本是论文方向的最小可运行基线。核心研究对象：
 
-- contract messages between agents
-- adaptive topology routing
-- planner / executor / verifier roles
-- contract-level process verification
-- protocol memory for reusable collaboration patterns
+- **Contract Messages** — Agent 间结构化通信（claim + evidence + action）
+- **Task Profiling** — 二维画像 (complexity, verifiability) 驱动拓扑选择
+- **Adaptive Topology Routing** — SINGLE_AGENT / SUPERVISOR_WORKER / REVIEW_LOOP
+- **Contract Verification** — 双层验证：结构合规 + 语义审计
+- **Protocol Memory** — 路由决策记忆，基于历史数据修正拓扑选择
+- **LLM Agent** — JSON 解析输出，与 RuleBasedAgent 接口一致
 
 ## Quick Start
 
 ```powershell
-python -m pip install -e ".[dev]"
-vma "Collect evidence, write a concise answer, and include verification notes."
+pip install -e ".[dev]"
+vma "用三句话解释什么是二分查找。" --backend mock
 pytest
 ```
 
-## DeepSeek Backend
+## Backends
 
-Set your key in the shell:
+| 后端 | 说明 |
+|------|------|
+| `--backend mock` | 零依赖，RuleBasedAgent 确定性模板 |
+| `--backend deepseek` | DeepSeek API，LLMAgent 驱动 |
+| `--backend ollama` | 本地 Ollama，LLMAgent 驱动 |
+| `--backend vllm` | 本地 vLLM，LLMAgent 驱动 |
 
 ```powershell
-$env:DEEPSEEK_API_KEY="sk-..."
-vma "Plan, execute, and verify a research task." --backend deepseek --model deepseek-v4-flash --judge-model deepseek-v4-pro
-```
+# Mock（无 LLM）
+vma "Summarize this task." --backend mock
 
-`deepseek-v4-flash` is used for normal agent work. `deepseek-v4-pro` can be reserved for verifier and synthesizer roles when `--judge-model` is provided.
+# DeepSeek
+$env:DEEPSEEK_API_KEY="sk-..."
+vma "比较 AutoGen 和 LangGraph 的架构差异" --backend deepseek --router quant
+
+# Ollama 本地
+vma "解释多 Agent 协同的优势" --backend ollama --model qwen3.5:4b
+```
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U[Task] --> P[Task Profiler]
-    P --> R[Topology Router]
-    R --> O[Orchestrator]
-    O --> A[Agents]
-    A --> C[Contract Messages]
-    C --> V[Contract Verifier]
-    V --> S[Synthesizer]
-    S --> M[Protocol Memory]
+```
+Task → Profiler (complexity, verifiability) → Router → Orchestrator → Agents → Verifier → Memory
 ```
 
-## Current Scope
+**拓扑决策矩阵：**
 
-The scaffold uses deterministic agents so the system can be tested before connecting real LLM backends. Replace `RuleBasedAgent` with an API-backed implementation once baseline logging and benchmark wrappers are stable.
+| 条件 | 拓扑 |
+|------|------|
+| complexity < 0.4 且 verifiability < 0.4 | SINGLE_AGENT |
+| complexity ≥ 0.4 且 verifiability < 0.4 | SUPERVISOR_WORKER |
+| verifiability ≥ 0.4 | REVIEW_LOOP |
 
-## Observable Runs and Contract Reports
+## Task Profiling
 
-Each CLI run can now expose the collaboration trace without changing the topology router or agent decision logic:
+二维画像替代了旧的六维 TCI：
+
+- **complexity** (0–1): 任务有多难分解（因果推理、多步规划、跨领域综合）
+- **verifiability** (0–1): 输出有多难被验证（核查/证伪 ≥ 0.6，比较/分析 0.3–0.5，总结/定义 < 0.3）
+
+评估方式：
+- `--backend mock`：规则启发式（关键词 + 从句数）
+- `--backend deepseek`：LLM 评估（few-shot prompt，JSON 输出）
+
+## Router Modes
 
 ```powershell
-vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --contract-report
-vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --json-trace
-vma "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。" --backend mock --save-run
+# Legacy（默认）— 简单决策矩阵
+vma "task" --router legacy
+
+# Quant — 量化路由 + 动态拓扑图生成
+vma "task" --router quant --show-topology --contract-report
 ```
 
-`--save-run` writes `runs/{run_id}/trace.json`. The JSON trace includes the task, task profile, selected topology, executed agents, contract messages, verification result, final answer, and metrics.
+`--router quant` 启用完整路径：`TaskProfile → TopologySpec → CollaborationGraph → GraphExecutor`
 
-Example contract report:
+## Routing Memory
+
+基于历史数据的拓扑修正。检索相似任务画像，若邻居失败率 > 0.5 则升级拓扑：
+
+```
+SINGLE_AGENT → SUPERVISOR_WORKER → REVIEW_LOOP
+```
+
+```powershell
+# 默认启用，持久化到 runs/memory.json
+vma "task" --router quant --routing-memory
+
+# 禁用
+vma "task" --router quant --no-routing-memory
+```
+
+## Contract Report
+
+```powershell
+vma "比较 AutoGen 和 LangGraph 的架构差异并验证比较标准。" \
+    --backend mock --router quant --contract-report
+```
+
+输出示例：
 
 ```text
 [Task Profile]
-tool_need=0.60 | uncertainty=0.75 | risk=0.20 | complexity=0.54
+complexity=0.45 | verifiability=0.33
 
 [Topology]
 selected=SUPERVISOR_WORKER
-reason=multi-step task with moderate uncertainty
+reason=complexity=0.45, verifiability=0.33 → SUPERVISOR_WORKER
+
+[Quantitative Router]
+task_type=comparison
+complexity=0.45 | verifiability=0.33
+capability_needs=['planning', 'verification', 'synthesis']
+generation_reasons=['complexity=0.45, verifiability=0.33', 'signal=comparison']
 
 [Contract Report]
 messages=4
-supported_claims=3
 support_rate=0.75
-evidence_coverage=0.75
-action_completeness=1.00
-accepted=False
-violations=["Executor#2 missing evidence"]
+accepted=True
 
 [Final Answer]
 ...
 ```
 
-## Quantitative Router Stage 1
-
-The quantitative router is available as an optional adapter layer. It emits a `TopologySpec`, then maps that spec back to the existing legacy topologies: `SINGLE_AGENT`, `SUPERVISOR_WORKER`, or `REVIEW_LOOP`. It does not implement a collaboration graph or dynamic graph execution.
+## Observable Runs
 
 ```powershell
-vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --contract-report
+# Contract report
+vma "task" --backend mock --contract-report
+
+# JSON trace
+vma "task" --backend mock --json-trace
+
+# 持久化到 runs/{run_id}/trace.json
+vma "task" --backend mock --save-run
 ```
 
-Example output:
+## Smoke Test
 
-```text
-[Quantitative Router]
-task_type=comparison
-tci=0.365
-capability_needs=['planning', 'verification', 'synthesis']
-max_nodes=4 | max_edges=3 | max_review_loops=0 | max_tool_calls=0
-blocked=False
-block_reason=None
-generation_reasons=['TCI=0.365 from horizon=0.75, dependency_depth=0.55, tool_burden=0.00, evidence_burden=0.20, uncertainty=0.50, risk=0.00', 'comparison', 'ordered_or_multiple_actions']
-```
-
-The TCI score is computed as:
-
-```text
-TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_burden + 0.15*uncertainty + 0.15*risk
-```
-
-For material-grounded tasks without supplied material, the spec is marked as blocked and normal agent execution is stopped with `accepted=False`.
-
-## Quantitative Router Stage 2
-
-`--router quant` now uses a constrained sequential graph execution path:
-
-```text
-TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
-```
-
-The default router path is unchanged. Graph execution is enabled only when `--router quant` is selected.
+10 条中文任务覆盖 5 种类型，验证画像 → 路由 → 执行全流程：
 
 ```powershell
-vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+# 全部 10 条（DeepSeek，需要 DEEPSEEK_API_KEY）
+python scripts/smoke_test.py
+
+# 单条调试
+python scripts/smoke_test.py -k "T09"
+
+# 指定后端
+python scripts/smoke_test.py --backend deepseek
 ```
 
-Example output:
+结果写入 `runs/smoke_results.csv`，可直接复制进论文数据表。
 
-```text
-[Generated Topology]
-Planner -> Executor -> Verifier -> Synthesizer
-blocked=False
+## Test Suite
 
-[Graph Execution]
-executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
-skipped_nodes=[]
-review_loops_used=0
-execution_mode=sequential_dag
+```powershell
+pytest                          # 全部 72 项单元测试
+pytest tests/test_memory.py     # ProtocolMemory 测试
+pytest tests/test_llm_agent.py  # LLMAgent 集成测试
 ```
-
-The first graph executor supports only sequential DAG execution. It does not run nodes concurrently and does not allow arbitrary cycles. Review loops are bounded by `max_review_loops`.
