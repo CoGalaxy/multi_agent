@@ -107,9 +107,12 @@ def profile_task(task: str) -> TaskProfile:
 
     # verifiability: 关键词命中 + 是否包含"比较/验证/评估"类强信号
     #   强信号词直接拉高 verifiability
-    strong_signals = {"比较", "对比", "验证", "审查", "评估", "compare", "verify", "evaluate", "audit",
-                      "安全", "风险", "合规", "安全约束", "隐私", "security", "safety", "risk", "compliance",
-                      "核查", "是否正确", "反驳", "证伪", "事实核查", "fact-check", "falsify"}
+    # strong_signals: 仅"验证/核查/证伪"类触发高 verifiability 公式
+    # 比较/评估/分析 不在此列——它们需要证据，但输出是可验证的
+    strong_signals = {"验证", "审查", "审计", "核查", "是否正确", "反驳", "证伪", "事实核查",
+                      "安全", "风险", "合规", "安全约束", "隐私",
+                      "verify", "audit", "falsify", "fact-check",
+                      "security", "safety", "risk", "compliance"}
     has_strong_signal = bool(all_hints & strong_signals)
     verifiability = round(min(verifiability_hits / 3, 1.0) if has_strong_signal else min(verifiability_hits / 5, 1.0), 3)
 
@@ -131,26 +134,41 @@ Dimensions:
   need for multi-dimensional cross-checking, absence of a single correct answer.
   (输出有多难验证其正确性？考虑：是否主观判断、是否比较/评估类任务、是否需要多维度交叉验证)
 
-CRITICAL verifiability rules:
-- If the task asks to check/verify/falsify/audit a claim → verifiability >= 0.6
-  (如果任务要求核查/验证/证伪/审计某个说法 → verifiability >= 0.6)
-- If the task asks to confirm whether something is true → verifiability >= 0.6
-  (如果任务要求确认某事是否属实 → verifiability >= 0.6)
-- If the task is purely describe/explain/summarize → verifiability may be low
-  (如果任务只是描述/解释/总结 → verifiability 可以较低)
-- If the task contains 核查/验证/是否正确/反驳/证伪 → verifiability >= 0.6
-  (If task contains words like verify/check/audit/falsify in any language → verifiability >= 0.6)
+CRITICAL verifiability rules — verifiability measures how hard it is
+to CHECK whether the output is CORRECT (NOT how much evidence it needs):
+
+HIGH verifiability (>= 0.6) — output correctness is hard to verify:
+  - Task asks to verify/falsify/audit a specific claim
+  - Task asks "is X true/correct?" requiring factual adjudication
+  - Task involves disputed/controversial claims
+  - Keywords: 验证/核查/是否正确/反驳/证伪/事实核查/verify/falsify/audit
+
+MEDIUM verifiability (0.3 ~ 0.5) — output needs cross-checking but is verifiable:
+  - Comparing two well-documented things (differences can be checked against docs)
+  - Analyzing risks/causes of a known phenomenon
+  - Explaining a concept with established knowledge
+  - Keywords: 比较/对比/分析/评估/解释/compare/analyze/evaluate/explain
+
+LOW verifiability (< 0.3) — output is self-evident or trivially checkable:
+  - Summarizing/describing known content
+  - One-sentence definition of a well-known concept
+  - Listing steps of a standard process
+
+CRITICAL: 比较/compare tasks do NOT have high verifiability!
+Comparing two frameworks can be verified by checking their documentation.
+Verification tasks (核查/验证/证伪) DO have high verifiability because
+they require determining truth/falsehood of a specific claim.
 
 Examples:
 1. Say hello → {"complexity": 0.0, "verifiability": 0.0}
 2. 打个招呼 → {"complexity": 0.0, "verifiability": 0.0}
 3. 用三句话解释什么是二分查找 → {"complexity": 0.1, "verifiability": 0.15}
-4. Compare AutoGen and CAMEL architectures → {"complexity": 0.55, "verifiability": 0.7}
-5. 比较 AutoGen 和 CAMEL 的架构差异并给出适用场景 → {"complexity": 0.6, "verifiability": 0.75}
+4. 比较 AutoGen 和 LangGraph 的架构差异并给出适用场景 → {"complexity": 0.6, "verifiability": 0.45}
+5. 分析 LLM 在法律文书中的风险并提出缓解措施 → {"complexity": 0.65, "verifiability": 0.45}
 6. 删除生产数据库中的用户数据并验证备份 → {"complexity": 0.45, "verifiability": 0.85}
 7. 请验证以下说法是否正确：RAG 可以消除幻觉 → {"complexity": 0.4, "verifiability": 0.85}
 8. 请核查：MetaGPT 是否使用了 ContractMessage → {"complexity": 0.3, "verifiability": 0.8}
-9. 设计一个复杂的多智能体协作系统 → {"complexity": 0.85, "verifiability": 0.7}
+9. 设计一个复杂的多智能体协作系统 → {"complexity": 0.85, "verifiability": 0.5}
 10. 用一句话总结什么是 Chain-of-Thought → {"complexity": 0.05, "verifiability": 0.05}
 
 Now classify: "{task}"
