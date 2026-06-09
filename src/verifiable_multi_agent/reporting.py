@@ -57,10 +57,8 @@ def format_contract_report(trace: AgentTrace) -> str:
     sections = [
             "[Task Profile]",
             (
-                f"tool_need={profile.tool_need:.2f} | "
-                f"uncertainty={profile.uncertainty:.2f} | "
-                f"risk={profile.risk:.2f} | "
-                f"complexity={profile.complexity:.2f}"
+                f"complexity={profile.complexity:.2f} | "
+                f"verifiability={profile.verifiability:.2f}"
             ),
             "",
             "[Topology]",
@@ -76,7 +74,8 @@ def format_contract_report(trace: AgentTrace) -> str:
                 "",
                 "[Quantitative Router]",
                 f"task_type={topology_spec['task_type']}",
-                f"tci={topology_spec['tci']:.3f}",
+                f"complexity={topology_spec['complexity']:.2f} | "
+                f"verifiability={topology_spec['verifiability']:.2f}",
                 f"capability_needs={enabled_needs}",
                 (
                     f"max_nodes={topology_spec['max_nodes']} | "

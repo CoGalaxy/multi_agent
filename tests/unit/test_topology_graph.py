@@ -13,13 +13,14 @@ from verifiable_multi_agent.topology.validator import validate_graph
 
 
 def _profile(task: str = "task") -> TaskProfile:
-    return TaskProfile(task=task, tool_need=0.0, uncertainty=0.0, step_count=1, risk=0.0)
+    return TaskProfile(task=task, complexity=0.4, verifiability=0.4)
 
 
 def _spec(needs: CapabilityNeeds, max_nodes: int = 8, blocked: bool = False) -> TopologySpec:
     return TopologySpec(
         task_type=TaskType.GENERAL,
-        tci=0.4,
+        complexity=0.4,
+        verifiability=0.4,
         capability_needs=needs,
         max_nodes=max_nodes,
         max_edges=max(max_nodes - 1, 0),
@@ -98,7 +99,8 @@ def test_material_and_tool_graph_augments_evidence_template() -> None:
 def test_comparison_critique_revision_augments_comparison_template() -> None:
     spec = TopologySpec(
         task_type=TaskType.COMPARISON,
-        tci=0.5,
+        complexity=0.5,
+        verifiability=0.6,
         capability_needs=CapabilityNeeds(
             planning=True,
             verification=True,

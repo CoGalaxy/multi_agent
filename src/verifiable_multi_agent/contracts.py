@@ -45,26 +45,19 @@ class TaskProfile(BaseModel):
     """
     任务画像 — Profiler 的输出，Router 的输入。
 
-    四个维度捕捉任务特征：
-    - tool_need: 是否需要外部工具（检索/API/数据库）
-    - uncertainty: 任务是否包含不确定性表述（"研究""对比""最新"）
-    - step_count: 从句式推断的步骤数（逗号/分号/连接词分割）
-    - risk: 是否涉及高风险领域（删除/支付/医疗/法律/安全）
+    两个独立维度捕捉任务特征：
+    - complexity:    任务有多难分解（0.0~1.0），由 LLM/规则对任务文本直接评估
+    - verifiability: 输出有多难被验证（0.0~1.0），由 LLM/规则对任务文本直接评估
 
-    当前使用关键词匹配估计，后续替换为小模型分类器以提升准确率。
+    拓扑决策矩阵：
+      complexity < 0.4 且 verifiability < 0.4  → SINGLE_AGENT
+      complexity >= 0.4 且 verifiability < 0.4 → SUPERVISOR_WORKER
+      其他（verifiability >= 0.4）             → REVIEW_LOOP
     """
 
     task: str
-    tool_need: float = Field(ge=0.0, le=1.0)
-    uncertainty: float = Field(ge=0.0, le=1.0)
-    step_count: int = Field(ge=1)
-    risk: float = Field(ge=0.0, le=1.0)
-
-    @property
-    def complexity(self) -> float:
-        """四维等权平均，step_count 以 6 步为 saturation 上限。"""
-        step_score = min(self.step_count / 6, 1.0)
-        return round((self.tool_need + self.uncertainty + step_score + self.risk) / 4, 3)
+    complexity: float = Field(ge=0.0, le=1.0, default=0.0)
+    verifiability: float = Field(ge=0.0, le=1.0, default=0.0)
 
 
 class Budget(BaseModel):

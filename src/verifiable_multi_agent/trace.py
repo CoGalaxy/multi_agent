@@ -36,7 +36,7 @@ def build_run_trace(trace: AgentTrace, run_id: str | None = None) -> RunTrace:
         run_id=generated_run_id,
         created_at=datetime.now(UTC).isoformat(),
         task=trace.task,
-        task_profile=trace.profile.model_dump(mode="json") | {"complexity": trace.profile.complexity},
+        task_profile=trace.profile.model_dump(mode="json"),
         selected_topology=trace.topology.value,
         topology_reason=trace.topology_reason,
         agents_executed=[message.role.value for message in trace.messages],

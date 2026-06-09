@@ -24,7 +24,12 @@ class ConstrainedTopologyGenerator:
         selected, augment_reasons = self._augment_template(selected, spec)
         generation_reasons.extend(augment_reasons)
         nodes = [
-            AgentNode(id=node_type.value, type=node_type, label=NODE_LABELS[node_type], config={"tci": spec.tci})
+            AgentNode(
+                id=node_type.value,
+                type=node_type,
+                label=NODE_LABELS[node_type],
+                config={"complexity": spec.complexity, "verifiability": spec.verifiability},
+            )
             for node_type in selected
         ]
         edges = [

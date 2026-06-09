@@ -18,7 +18,8 @@ def test_risky_task_uses_review_loop(tmp_path: Path) -> None:
     trace = Orchestrator(tmp_path / "memory.jsonl").solve(task)
 
     assert trace.topology == Topology.REVIEW_LOOP
-    assert trace.profile.risk >= 0.5
+    # 高验证难度任务应该触发 REVIEW_LOOP
+    assert trace.profile.verifiability >= 0.4
     assert trace.verification is not None
     assert trace.verification.accepted
 

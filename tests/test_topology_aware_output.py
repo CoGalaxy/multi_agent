@@ -10,11 +10,12 @@ def test_single_agent_trace_explains_direct_route(tmp_path: Path) -> None:
     assert trace.topology == Topology.SINGLE_AGENT
     assert trace.topology_reason
     assert any("Directly answer" in message.subtask for message in trace.messages)
-    assert any("Low complexity" in item for item in trace.execution_summary)
+    assert any("SINGLE_AGENT" in item for item in trace.execution_summary)
 
 
 def test_supervisor_worker_trace_explains_planner_handoff(tmp_path: Path) -> None:
-    task = "Compare AutoGen and CAMEL, then verify the comparison criteria."
+    # 复杂度高但验证难度低的纯工程任务 → SUPERVISOR_WORKER
+    task = "Build a multi-agent coordination system with task allocation and communication protocols."
     trace = Orchestrator(tmp_path / "memory.jsonl").solve(task)
 
     assert trace.topology == Topology.SUPERVISOR_WORKER
@@ -33,13 +34,14 @@ def test_review_loop_trace_explains_revision_pass(tmp_path: Path) -> None:
     assert any("Final compliance verification" in message.subtask for message in trace.messages)
 
 
-def test_chinese_compare_task_uses_supervisor_worker_and_chinese_trace(tmp_path: Path) -> None:
+def test_chinese_compare_task_uses_review_loop_and_chinese_trace(tmp_path: Path) -> None:
+    # 比较+验证 → 高验证难度，路由到 REVIEW_LOOP
     task = "比较 AutoGen 和 CAMEL 作为多智能体协作基线的优缺点，并验证比较标准是否合理。"
     trace = Orchestrator(tmp_path / "memory.jsonl").solve(task)
 
-    assert trace.topology == Topology.SUPERVISOR_WORKER
-    assert trace.topology_reason and "中等复杂度" in trace.topology_reason
-    assert any("定义工作顺序" in message.subtask for message in trace.messages)
+    assert trace.topology == Topology.REVIEW_LOOP
+    assert trace.topology_reason and "高验证难度" in trace.topology_reason
+    assert any("初版安全回答" in message.subtask for message in trace.messages)
     assert trace.final_answer
     assert "执行路线" not in trace.final_answer
 
