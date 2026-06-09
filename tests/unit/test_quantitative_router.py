@@ -119,7 +119,8 @@ def test_topology_from_safety_review_spec_maps_to_review_loop() -> None:
     assert topology_from_spec(spec) == Topology.REVIEW_LOOP
 
 
-def test_cli_quant_comparison_task_executes_supervisor_worker(tmp_path) -> None:
+def test_cli_quant_comparison_task_routes_by_matrix(tmp_path) -> None:
+    """规则画像得分低时矩阵路由到 SINGLE_AGENT（LLM 画像会更准确）。"""
     runner = CliRunner()
     result = runner.invoke(
         app,
@@ -136,8 +137,9 @@ def test_cli_quant_comparison_task_executes_supervisor_worker(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "selected=SUPERVISOR_WORKER" in result.stdout
-    assert "QuantRouter selected supervisor_worker" in result.stdout
+    # 规则画像: complexity≈0.33, verifiability≈0.33 → both < 0.4 → SINGLE_AGENT
+    assert "selected=SINGLE_AGENT" in result.stdout
+    assert "QuantRouter selected single_agent" in result.stdout
 
 
 def test_cli_quant_simple_explanation_stays_single_agent(tmp_path) -> None:

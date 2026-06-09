@@ -130,7 +130,10 @@ class QuantitativeRouter:
             neighbors = memory.query(profile.complexity, profile.verifiability, k=3)
             if neighbors:
                 fail_rate = memory.historical_fail_rate(neighbors)
-                current_topology = _topology_from_needs(needs)
+                # 使用与 topology_from_spec 相同的矩阵判断当前拓扑
+                current_topology = _matrix_topology(
+                    profile.complexity, profile.verifiability
+                )
                 if fail_rate > 0.5 and current_topology != Topology.REVIEW_LOOP:
                     upgraded = _TOPOLOGY_UPGRADE[current_topology]
                     # 升级能力需求以匹配新拓扑
@@ -163,14 +166,20 @@ class QuantitativeRouter:
 
 
 def topology_from_spec(spec: TopologySpec) -> Topology:
-    needs = spec.capability_needs
+    """从 TopologySpec 映射到 Topology，与 router.py 决策矩阵对齐。
+
+    决策矩阵：
+      complexity < 0.4  AND verifiability < 0.4  → SINGLE_AGENT
+      complexity >= 0.4 AND verifiability < 0.4  → SUPERVISOR_WORKER
+      其他（verifiability >= 0.4）               → REVIEW_LOOP
+    """
     if spec.blocked:
         return Topology.SINGLE_AGENT
-    if needs.safety_review or needs.critique or needs.revision:
-        return Topology.REVIEW_LOOP
-    if needs.planning or needs.material_grounding or needs.tool_execution or needs.synthesis:
+    if spec.complexity < 0.4 and spec.verifiability < 0.4:
+        return Topology.SINGLE_AGENT
+    if spec.complexity >= 0.4 and spec.verifiability < 0.4:
         return Topology.SUPERVISOR_WORKER
-    return Topology.SINGLE_AGENT
+    return Topology.REVIEW_LOOP
 
 
 def explain_topology_spec(spec: TopologySpec) -> str:
@@ -207,10 +216,10 @@ def _has_inline_material(task: str) -> bool:
     return any(marker.lower() in lower_task for marker in markers)
 
 
-def _topology_from_needs(needs: CapabilityNeeds) -> Topology:
-    """从 CapabilityNeeds 推断对应的拓扑（不依赖完整的 TopologySpec）。"""
-    if needs.safety_review or needs.critique or needs.revision:
-        return Topology.REVIEW_LOOP
-    if needs.planning or needs.material_grounding or needs.tool_execution or needs.synthesis:
+def _matrix_topology(complexity: float, verifiability: float) -> Topology:
+    """二维决策矩阵 — 与 router.py 和 topology_from_spec 保持一致。"""
+    if complexity < 0.4 and verifiability < 0.4:
+        return Topology.SINGLE_AGENT
+    if complexity >= 0.4 and verifiability < 0.4:
         return Topology.SUPERVISOR_WORKER
-    return Topology.SINGLE_AGENT
+    return Topology.REVIEW_LOOP
