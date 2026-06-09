@@ -16,6 +16,26 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 
+def _load_dotenv() -> None:
+    """加载项目根目录的 .env 文件到环境变量。"""
+    env_path = _PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if value.startswith("${") and value.endswith("}"):
+            value = os.environ.get(value[2:-1], "")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
 @dataclass
 class TaskResult:
     task_id: str

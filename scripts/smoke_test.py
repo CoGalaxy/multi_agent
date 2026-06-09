@@ -195,3 +195,20 @@ def test_smoke_task(
                      f"{task_id} complexity={result.complexity:.3f} (<0.4)")
 
     print("CSV:", collector.csv_line(result))
+
+
+# ── 直接运行入口 ──────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import sys
+
+    args = [
+        "scripts/smoke_test.py",
+        "-v",
+        "--backend", "deepseek",
+        *sys.argv[1:],
+    ]
+    # 确保项目根目录是 cwd
+    import os as _os
+    _os.chdir(str(_PROJECT_ROOT))
+    sys.exit(pytest.main(args))
