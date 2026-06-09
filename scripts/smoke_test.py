@@ -91,20 +91,20 @@ def _make_qwen_backend() -> LlmBackend:
 # ── Session fixtures ──────────────────────────────────────────────
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def backend_name(request: pytest.FixtureRequest) -> str:
     """由 pytest_generate_tests 动态 parametrize。"""
     return request.param
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def llm_backend(backend_name: str) -> LlmBackend:
     if backend_name == "deepseek":
         return _make_deepseek_backend()
     return _make_qwen_backend()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def profiler(llm_backend: LlmBackend) -> LlmProfiler | None:
     try:
         if isinstance(llm_backend, DeepSeekBackend):
