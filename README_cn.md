@@ -1,61 +1,101 @@
-# 可验证多智能体协作框架
+# 可验证多智能体协同架构
 
-本仓库是新毕设方向的首个可运行基线：
+面向复杂长程任务的可验证多智能体协同架构研究 — 最小可运行基线。
 
-> 面向复杂长程任务的可验证 LLM Agent 与多 Agent 协同架构研究
+## 核心模块
 
-当前版本刻意保持精简。它无需模型 API 即可运行，并将核心研究对象显式化：
-
-- 智能体之间的合约消息
-- 自适应拓扑路由
-- Planner / Executor / Verifier 角色
-- 合约级过程验证
-- 用于记录可复用协作模式的协议记忆
+| 模块 | 说明 |
+|------|------|
+| **合约消息** | Agent 间结构化通信：主张（claim）+ 证据（evidence）+ 动作（action） |
+| **任务画像** | 二维评估：复杂度（complexity）+ 验证难度（verifiability），规则或 LLM 驱动 |
+| **拓扑路由** | 三种协作拓扑：SINGLE_AGENT / SUPERVISOR_WORKER / REVIEW_LOOP |
+| **合约验证** | 双层验证：结构合规检查（零成本 rule-based gate）+ LLM 语义审计 |
+| **协议记忆** | 检索历史相似任务，邻居失败率过高时自动升级拓扑 |
+| **LLM Agent** | JSON 解析输出，与规则 Agent 接口统一，按后端自动切换 |
 
 ## 快速开始
 
 ```powershell
-python -m pip install -e ".[dev]"
-vma "收集证据，给出简明答案，并附上验证说明。"
+pip install -e ".[dev]"
+vma "用三句话解释什么是二分查找。" --backend mock
 pytest
 ```
 
-## DeepSeek 后端
+## 后端
 
-在 shell 中设置 API 密钥：
+| 参数 | Agent | 说明 |
+|------|-------|------|
+| `--backend mock` | RuleBasedAgent | 零依赖，确定性模板，验证管线逻辑 |
+| `--backend ollama` | LLMAgent | 本地 Ollama 推理 |
+| `--backend vllm` | LLMAgent | 本地 vLLM 推理 |
+| `--backend deepseek` | LLMAgent | DeepSeek API 云端推理 |
 
 ```powershell
-$env:DEEPSEEK_API_KEY="sk-..."
-vma "规划、执行并验证一项研究任务。" --backend deepseek --model deepseek-v4-flash --judge-model deepseek-v4-pro
-```
+# Mock 模式 — 无 LLM 依赖，快速跑通管线
+vma "总结这段文本。" --backend mock
 
-`deepseek-v4-flash` 用于普通 agent 工作。当提供 `--judge-model` 时，`deepseek-v4-pro` 可保留给 verifier 和 synthesizer 角色使用。
+# DeepSeek 云端
+$env:DEEPSEEK_API_KEY="sk-..."
+vma "比较 AutoGen 和 LangGraph 的架构差异" --backend deepseek --router quant
+
+# 本地 Ollama
+vma "解释多 Agent 协同的优势" --backend ollama --model qwen3.5:4b
+```
 
 ## 架构
 
 ```mermaid
 flowchart LR
-    U[任务 Task] --> P[任务画像 Task Profiler]
-    P --> R[拓扑路由 Topology Router]
-    R --> O[编排器 Orchestrator]
-    O --> A[智能体 Agents]
-    A --> C[合约消息 Contract Messages]
-    C --> V[合约验证器 Contract Verifier]
-    V --> S[综合器 Synthesizer]
-    S --> M[协议记忆 Protocol Memory]
+    U[任务] --> P[任务画像]
+    P --> R[拓扑路由]
+    R --> O[编排器]
+    O --> A[Agent]
+    A --> C[合约消息]
+    C --> V[合约验证]
+    V --> S[综合器]
+    S --> M[协议记忆]
 ```
 
-### 三种运行拓扑
+## 任务画像
 
-| 拓扑 | 触发条件 | Agent 执行序列 |
-|---|---|---|
-| SINGLE_AGENT | 低复杂度、低风险 | Executor → Verifier |
-| SUPERVISOR_WORKER | 中等复杂度（≥0.25）或多步骤（≥3） | Planner → Executor → Verifier |
-| REVIEW_LOOP | 高风险（≥0.5）或高复杂度（≥0.55） | Planner → Executor → Verifier → Executor → Verifier |
+每个任务被评估为两个独立维度：
 
-若首次验证未通过且当前拓扑低于 REVIEW_LOOP，编排器会自动升级为 REVIEW_LOOP 进行重试。
+- **复杂度**（0–1）：任务有多难分解为子任务。因果推理、多步规划、跨领域综合 → 高；一句话总结 → 低
+- **验证难度**（0–1）：输出有多难被验证正确性。核查/证伪某个说法 → 高（≥ 0.6）；比较/分析 → 中（0.3–0.5）；总结/定义 → 低（< 0.3）
 
-### 合约消息模型
+mock 模式下使用关键词启发式规则。deepseek 模式下由 flash 模型做 few-shot 分类，输出 `{"complexity": x, "verifiability": y}`，解析失败时自动回退到规则评估。
+
+## 拓扑路由
+
+决策矩阵（阈值 0.4）：
+
+| 复杂度 | 验证难度 | 拓扑 | 说明 |
+|--------|---------|------|------|
+| < 0.4 | < 0.4 | SINGLE_AGENT | 直接执行 + 轻量验证 |
+| ≥ 0.4 | < 0.4 | SUPERVISOR_WORKER | 先规划再执行再验证 |
+| 任意 | ≥ 0.4 | REVIEW_LOOP | 执行 → 审查 → 修订闭环 |
+
+若首次验证未通过且当前拓扑低于 REVIEW_LOOP，编排器自动升级重试。
+
+```powershell
+vma "task" --router legacy          # 基础路由
+vma "task" --router quant           # 量化路由 + 动态拓扑图生成
+vma "task" --router quant --show-topology  # 展示生成的拓扑图
+```
+
+量化路由启用完整路径：`TaskProfile → TopologySpec → CollaborationGraph → GraphExecutor`。
+
+## 路由记忆
+
+系统在每次任务执行后将画像、拓扑选择、验证结果存入 `runs/memory.json`。新任务到来时：
+
+1. 在 (complexity, verifiability) 二维空间中检索最近 3 条历史记录
+2. 计算邻居中 accepted=False 的比例
+3. 若失败率 > 50% 且当前拓扑非最高级，自动升级一级：`SINGLE_AGENT → SUPERVISOR_WORKER → REVIEW_LOOP`
+
+默认启用，通过 `--no-routing-memory` 关闭。
+
+## 合约消息模型
 
 Agent 之间的每次通信均为 `ContractMessage`，包含以下字段：
 
@@ -63,88 +103,67 @@ Agent 之间的每次通信均为 `ContractMessage`，包含以下字段：
 - `subtask` — 当前子任务描述
 - `claim` — Agent 的主张
 - `evidence` — 支撑主张的证据列表
-- `action` — 采取的行动
-- `uncertainty` — 不确定性评分（0~1）
-- `budget_hint` — 预算提示
+- `action` — 采取的动作
+- `uncertainty` — 不确定性评分（0–1）
 
-验证器要求支持率 ≥ 80% 且无缺失 action，合约才算通过。
+验证器逐条检查 evidence 与 claim 的关键词重叠，support_rate = 有效支撑条数 / evidence 总条数。support_rate ≥ 0.5 且无缺失 action 方可通过。
 
-## 当前范围
-
-本框架使用确定性 agent（`RuleBasedAgent`），以便在接入真实 LLM 后端之前完成基线日志和基准测试包装器的测试与稳定工作。
-
-切换至 LLM 后端后，`RuleBasedAgent.run()` 会自动委托给后端，同时注入 grounding 规则——确保每次 LLM 调用都锚定原始任务，不引入任务之外的新话题。
-## 定量 Router 第一阶段
-
-当前新增的定量 Router 是一个可选规格层，只输出 `TopologySpec`，不会替换旧的 `SINGLE_AGENT / SUPERVISOR_WORKER / REVIEW_LOOP` 执行路径，也不会实现动态图执行。
-
-运行示例：
+## 合约报告
 
 ```powershell
-vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --contract-report
+vma "比较 AutoGen 和 LangGraph 的架构差异并验证比较标准。" \
+    --backend mock --router quant --contract-report
 ```
-
-示例输出：
 
 ```text
-[Quantitative Router]
-task_type=comparison
-tci=0.365
-capability_needs=['planning', 'verification', 'synthesis']
-max_nodes=4 | max_edges=3 | max_review_loops=0 | max_tool_calls=0
-blocked=False
-block_reason=None
-generation_reasons=['TCI=0.365 from horizon=0.75, dependency_depth=0.55, tool_burden=0.00, evidence_burden=0.20, uncertainty=0.50, risk=0.00', 'comparison', 'ordered_or_multiple_actions']
+[Task Profile]
+complexity=0.45 | verifiability=0.33
+
+[Topology]
+selected=SUPERVISOR_WORKER
+reason=complexity=0.45, verifiability=0.33 → SUPERVISOR_WORKER
+
+[Contract Report]
+messages=4
+support_rate=0.75
+accepted=True
+
+[Final Answer]
+...
 ```
 
-TCI 公式：
-
-```text
-TCI = 0.20*horizon + 0.20*dependency_depth + 0.15*tool_burden + 0.15*evidence_burden + 0.15*uncertainty + 0.15*risk
-```
-
-`CapabilityNeeds` 描述任务需要哪些能力，例如 `planning`、`tool_execution`、`material_grounding`、`verification`、`safety_review` 和 `synthesis`。
-
-对于“根据给定材料”但没有提供材料的任务，`TopologySpec` 会标记：
-
-```text
-blocked=True
-block_reason=missing material: task requires given material but no material content was provided
-```
-
-注意：第一阶段只生成规格，不改变 Orchestrator 的实际执行逻辑。
-## 定量 Router Adapter 更新
-
-现在 `--router quant` 会通过轻量 adapter 将 `TopologySpec` 映射回现有三种 legacy topology：`SINGLE_AGENT`、`SUPERVISOR_WORKER` 或 `REVIEW_LOOP`。它仍然不会实现 CollaborationGraph，也不会做动态图执行。对于缺少给定材料的任务，会停止正常 agent 执行并返回 `accepted=False`。
-
-## 定量 Router 第二阶段
-
-`--router quant` 现在会启用受约束的顺序图执行路径：
-
-```text
-TopologySpec -> CollaborationGraph -> GraphExecutor -> ContractReport / FinalAnswer
-```
-
-默认 router 路径保持不变。只有显式指定 `--router quant` 时才会启用图执行。
-
-运行示例：
+## 可观测运行
 
 ```powershell
-vma "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。" --backend mock --router quant --show-topology --contract-report
+vma "task" --backend mock --contract-report   # 合约报告
+vma "task" --backend mock --json-trace        # JSON 完整轨迹
+vma "task" --backend mock --save-run          # 持久化到 runs/{run_id}/trace.json
 ```
 
-示例输出：
+## 冒烟测试
 
-```text
-[Generated Topology]
-Planner -> Executor -> Verifier -> Synthesizer
-blocked=False
+10 条中文任务，覆盖五种类型，验证画像 → 路由 → 执行全流程：
 
-[Graph Execution]
-executed_nodes=['planner', 'executor', 'verifier', 'synthesizer']
-skipped_nodes=[]
-review_loops_used=0
-execution_mode=sequential_dag
+| 类型 | 编号 | 期望路由 |
+|------|------|---------|
+| 事实比较 | T01–T02 | SUPERVISOR / REVIEW |
+| 多跳推理 | T03–T04 | SUPERVISOR / REVIEW |
+| 开放分析 | T05–T06 | SINGLE / SUPERVISOR |
+| 验证挑战 | T07–T08 | REVIEW |
+| 路由边界 | T09–T10 | SINGLE / REVIEW |
+
+```powershell
+python scripts/smoke_test.py                  # 全部 10 条（需要 DEEPSEEK_API_KEY）
+python scripts/smoke_test.py -k "T09"         # 单条调试
+python scripts/smoke_test.py --backend all    # 多后端横向对比
 ```
 
-第一版 GraphExecutor 只支持顺序 DAG，不做并发，不允许任意环；review loop 受 `max_review_loops` 限制。
+每条任务输出 CSV 行，汇总结果写入 `runs/smoke_results.csv`。
+
+## 测试
+
+```powershell
+pytest                          # 全部 72 项
+pytest tests/test_memory.py     # 路由记忆
+pytest tests/test_llm_agent.py  # LLM Agent 集成
+```
