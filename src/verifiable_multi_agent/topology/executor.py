@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from verifiable_multi_agent.agents import RuleBasedAgent
+from verifiable_multi_agent.agents import LLMAgent, RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, ContractMessage, TaskProfile, Topology, VerificationResult
 from verifiable_multi_agent.rag import SimpleRagRetriever
@@ -86,7 +86,7 @@ class GraphExecutor:
                     f"{stage_note}\nRetrieved RAG evidence:\n"
                     + "\n".join(f"- {line}" for line in evidence)
                 )
-                message = RuleBasedAgent(role, backend=self.backend).run(
+                message = self._make_agent(role).run(
                     task,
                     context,
                     subtask=_subtask_for_node(node.type),
@@ -111,7 +111,7 @@ class GraphExecutor:
                     }
                 )
                 return message
-        message = RuleBasedAgent(role, backend=self.backend).run(
+        message = self._make_agent(role).run(
             task,
             context,
             subtask=_subtask_for_node(node.type),
@@ -142,6 +142,12 @@ class GraphExecutor:
             trace.metadata["graph_execution"]["review_loops_used"] = loops_used
             trace.verification = verify_contracts(trace.messages)
         return trace
+
+    def _make_agent(self, role: AgentRole) -> RuleBasedAgent | LLMAgent:
+        """根据 backend 类型选择合适的 Agent 实现。"""
+        if self.backend and self.backend.is_real_llm:
+            return LLMAgent(role, self.backend)
+        return RuleBasedAgent(role, backend=self.backend)
 
 
 def _role_for_node(node_type: AgentType) -> AgentRole:

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from uuid import uuid4
 
-from verifiable_multi_agent.agents import RuleBasedAgent
+from verifiable_multi_agent.agents import LLMAgent, RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, ContractMessage, TaskProfile, Topology
 from verifiable_multi_agent.memory import JsonlProtocolMemory, MemoryRecord, ProtocolMemory
@@ -124,7 +124,7 @@ class Orchestrator:
             budget.consume()
             trace.execution_summary.append(f"{_role_label(step['role'], task)}: {step['subtask']}")
             trace.messages.append(
-                RuleBasedAgent(step["role"], backend=self.backend).run(
+                self._make_agent(step["role"]).run(
                     task,
                     trace.messages,
                     subtask=step["subtask"],
@@ -143,7 +143,7 @@ class Orchestrator:
             for role in (AgentRole.VERIFIER, AgentRole.SYNTHESIZER):
                 budget.consume()
                 trace.messages.append(
-                    RuleBasedAgent(role, backend=self.backend).run(
+                    self._make_agent(role).run(
                         task,
                         trace.messages,
                         stage_note=escalation_note,
@@ -160,7 +160,7 @@ class Orchestrator:
 
         # 阶段 3: 综合最终答案
         synth_stage_label = "执行摘要" if _contains_cjk(task) else "Execution summary"
-        synth = RuleBasedAgent(AgentRole.SYNTHESIZER, backend=self.backend).run(
+        synth = self._make_agent(AgentRole.SYNTHESIZER).run(
             task,
             trace.messages,
             subtask="合成最终答案" if _contains_cjk(task) else None,
@@ -174,6 +174,16 @@ class Orchestrator:
         # 阶段 5: 路由决策存入路由记忆
         self._add_routing_record(profile, trace)
         return trace
+
+    def _make_agent(self, role: AgentRole) -> RuleBasedAgent | LLMAgent:
+        """根据 backend 类型选择合适的 Agent 实现。
+
+        - 真实 LLM 后端（Ollama/DeepSeek/vLLM）→ LLMAgent
+        - mock / 无后端 → RuleBasedAgent（确定性模板）
+        """
+        if self.backend and self.backend.is_real_llm:
+            return LLMAgent(role, self.backend)
+        return RuleBasedAgent(role, backend=self.backend)
 
     def _add_routing_record(self, profile: TaskProfile, trace: AgentTrace) -> None:
         """将本次路由决策保存到 ProtocolMemory（若已启用）。"""
