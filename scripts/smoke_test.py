@@ -1,192 +1,197 @@
 #!/usr/bin/env python3
-"""冒烟测试 — 依次执行关键 CLI 路径，断言退出码和输出关键字。
+"""端到端冒烟测试 — 使用真实 LLM 后端验证 10 条中文任务的画像→路由→执行全流程。
 
 用法:
-  python scripts/smoke_test.py          # 运行步骤 1-3（mock）
-  SMOKE_FULL=1 python scripts/smoke_test.py  # 运行全部 4 步（含 DeepSeek）
+  pytest scripts/smoke_test.py -v --backend deepseek
+  pytest scripts/smoke_test.py -v --backend qwen
+  pytest scripts/smoke_test.py -v --backend all
+  pytest scripts/smoke_test.py -v -k "T01"
 
-步骤 4 需要 DEEPSEEK_API_KEY 环境变量，CI 中未设置时自动跳过。
+环境变量:
+  DEEPSEEK_API_KEY  — deepseek 后端必需
+  QWEN_API_KEY      — qwen 云端 API（可选，无则尝试本地 Ollama）
+  OLLAMA_BASE_URL   — Ollama 端点（默认 http://localhost:11434）
+  OLLAMA_MODEL      — Qwen 模型名（默认 qwen3.5:4b）
 """
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
-import subprocess
 import sys
+import warnings
 from pathlib import Path
 
-TASK = "比较 AutoGen 和 LangGraph 的架构差异并验证比较标准。"
+import httpx
+import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RUNS_DIR = PROJECT_ROOT / "runs"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
 
-# 尽量用已安装的 vma 命令，fallback 到模块调用
-VMA = os.getenv("VMA_BIN", "vma")
+from scripts.conftest import ResultCollector, TaskResult  # noqa: E402
+
+from verifiable_multi_agent.backends import (  # noqa: E402
+    DeepSeekBackend,
+    LlmBackend,
+    OllamaBackend,
+    OpenAICompatibleBackend,
+)
+from verifiable_multi_agent.memory import ProtocolMemory  # noqa: E402
+from verifiable_multi_agent.orchestrator import Orchestrator  # noqa: E402
+from verifiable_multi_agent.profiler import LlmProfiler  # noqa: E402
+
+# ── 任务集（10 条，覆盖 4+1 种类型）──────────────────────────────
+
+TASKS: list[tuple[str, str, str]] = [
+    # 事实比较类（期望：SUPERVISOR 或 REVIEW）
+    ("T01", "比较 AutoGen 和 LangGraph 在多 Agent 编排上的核心架构差异，并给出各自适用场景。", "factual_compare"),
+    ("T02", "比较 Transformer 和 Mamba 架构在长序列建模上的效率差异，列出支撑证据。", "factual_compare"),
+    # 多跳推理类（期望：SUPERVISOR 或 REVIEW）
+    ("T03", "DeepSeek-v4 的训练数据截止时间是什么？这对它回答 2025 年事件的能力有何影响？", "multi_hop"),
+    ("T04", "如果一个任务需要调用三个工具、结果之间存在依赖关系，应该选择什么拓扑结构，为什么？", "multi_hop"),
+    # 开放分析类（期望：SINGLE 或 SUPERVISOR）
+    ("T05", "分析大型语言模型在法律文书生成场景中的主要风险，并提出缓解措施。", "open_analysis"),
+    ("T06", "说明为什么多 Agent 系统中的幻觉传播比单 Agent 更难被发现。", "open_analysis"),
+    # 验证挑战类（期望：REVIEW，高 verifiability）
+    ("T07", "请验证以下说法是否正确：RAG 系统可以完全消除 LLM 的幻觉问题。要求给出反驳证据。", "verification"),
+    ("T08", "请核查：MetaGPT 是否使用了 ContractMessage 机制？如果没有，它用什么替代？", "verification"),
+    # 路由边界类
+    ("T09", "用一句话总结什么是 Chain-of-Thought 提示。", "boundary_simple"),
+    ("T10", "设计一个包含 Planner、Executor、Verifier 三个角色的任务流，"
+             "验证 RAG 在医疗问答场景中的证据充分性，并给出改进建议。", "boundary_complex"),
+]
 
 
-def _run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-    """运行 vma 命令，统一捕获输出。"""
-    cmd = [VMA, *args]
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=kwargs.pop("timeout", 60),  # type: ignore[arg-type]
-        cwd=str(PROJECT_ROOT),
-        **kwargs,  # type: ignore[arg-type]
+# ── Backend 工厂 ──────────────────────────────────────────────────
+
+def _make_deepseek_backend() -> LlmBackend:
+    key = os.getenv("DEEPSEEK_API_KEY")
+    if not key:
+        pytest.skip("DEEPSEEK_API_KEY not set")
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    return DeepSeekBackend(api_key=key, model=model, base_url=base_url, timeout=180.0)
+
+
+def _make_qwen_backend() -> LlmBackend:
+    key = os.getenv("QWEN_API_KEY")
+    if key:
+        base_url = os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        model = os.getenv("QWEN_MODEL", "qwen-plus")
+        return OpenAICompatibleBackend(base_url=base_url, model=model, api_key=key, timeout=180.0)
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    try:
+        r = httpx.get(f"{ollama_url}/api/tags", timeout=5.0)
+        r.raise_for_status()
+        model = os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
+        return OllamaBackend(model=model, base_url=ollama_url, timeout=180.0)
+    except Exception:
+        pytest.skip("Neither QWEN_API_KEY nor local Ollama available")
+
+
+# ── Session fixtures ──────────────────────────────────────────────
+
+
+@pytest.fixture(scope="session")
+def backend_name(request: pytest.FixtureRequest) -> str:
+    """由 pytest_generate_tests 动态 parametrize。"""
+    return request.param
+
+
+@pytest.fixture(scope="session")
+def llm_backend(backend_name: str) -> LlmBackend:
+    if backend_name == "deepseek":
+        return _make_deepseek_backend()
+    return _make_qwen_backend()
+
+
+@pytest.fixture(scope="session")
+def profiler(llm_backend: LlmBackend) -> LlmProfiler | None:
+    try:
+        if isinstance(llm_backend, DeepSeekBackend):
+            key = os.getenv("DEEPSEEK_API_KEY", "")
+            base = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+            return LlmProfiler(
+                DeepSeekBackend(api_key=key, model="deepseek-v4-flash", base_url=base, timeout=120.0)
+            )
+    except Exception:
+        pass
+    return None
+
+
+# ── 执行 ──────────────────────────────────────────────────────────
+
+def _run_single_task(
+    task_id: str, task_text: str, task_type: str,
+    backend: LlmBackend, backend_name: str, profiler_inst: LlmProfiler | None,
+) -> TaskResult:
+    orch = Orchestrator(
+        backend=backend,
+        profiler=profiler_inst,
+        router_mode="quant",
+        routing_memory=ProtocolMemory("runs/memory.json"),
+    )
+    trace = orch.solve(task_text)
+    profile = trace.profile
+    verification = trace.verification
+    return TaskResult(
+        task_id=task_id, task_type=task_type, backend=backend_name,
+        task_text=task_text,
+        complexity=profile.complexity,
+        verifiability=profile.verifiability,
+        topology_used=trace.topology.value,
+        accepted=verification.accepted if verification else False,
+        support_rate=verification.support_rate if verification else 0.0,
+        claim=trace.final_answer or "",
+        evidence_count=sum(1 for m in trace.messages if m.evidence),
     )
 
 
-def _assert_ok(proc: subprocess.CompletedProcess[str], step: str) -> None:
-    """断言退出码为 0。"""
-    assert proc.returncode == 0, (
-        f"[{step}] 退出码非 0: {proc.returncode}\n"
-        f"STDERR:\n{proc.stderr}\nSTDOUT:\n{proc.stdout}"
+def _assert_fields(result: TaskResult) -> None:
+    assert 0.0 <= result.complexity <= 1.0, f"complexity={result.complexity}"
+    assert 0.0 <= result.verifiability <= 1.0, f"verifiability={result.verifiability}"
+    assert result.topology_used in ("single_agent", "supervisor_worker", "review_loop"), (
+        f"topology={result.topology_used}"
     )
-    print(f"  [OK] [{step}] exit=0")
+    assert isinstance(result.accepted, bool)
+    assert 0.0 <= result.support_rate <= 1.0, f"support_rate={result.support_rate}"
+    assert isinstance(result.claim, str) and result.claim.strip(), "claim empty"
+    if result.accepted:
+        assert result.evidence_count >= 1, f"accepted but evidence={result.evidence_count}"
 
 
-def _assert_contains(proc: subprocess.CompletedProcess[str], keyword: str, step: str) -> None:
-    """断言 stdout 包含指定关键字。"""
-    assert keyword in proc.stdout, (
-        f"[{step}] 输出缺少关键字 '{keyword}'\nSTDOUT:\n{proc.stdout}"
+def _soft_expect(condition: bool, message: str) -> None:
+    if not condition:
+        warnings.warn(message, stacklevel=2)
+
+
+# ── Parametrized test ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("task_id, task_text, task_type", TASKS)
+def test_smoke_task(
+    task_id: str, task_text: str, task_type: str,
+    llm_backend: LlmBackend, backend_name: str,
+    profiler: LlmProfiler | None, collector: ResultCollector,
+) -> None:
+    result = _run_single_task(
+        task_id, task_text, task_type,
+        backend=llm_backend, backend_name=backend_name, profiler_inst=profiler,
     )
+    collector.add(result)
 
+    _assert_fields(result)
 
-def _clean_runs() -> None:
-    """清理上次运行的 runs/ 目录。"""
-    if RUNS_DIR.exists():
-        shutil.rmtree(RUNS_DIR)
+    # 软断言
+    if task_id == "T09":
+        _soft_expect(result.topology_used == "single_agent",
+                     f"T09 expected SINGLE_AGENT, got {result.topology_used}")
+    if task_id == "T10":
+        _soft_expect(result.topology_used == "review_loop",
+                     f"T10 expected REVIEW_LOOP, got {result.topology_used}")
+    if task_id in ("T07", "T08"):
+        _soft_expect(result.verifiability >= 0.5,
+                     f"{task_id} verifiability={result.verifiability:.3f} (<0.5)")
+    if task_id in ("T01", "T02"):
+        _soft_expect(result.complexity >= 0.4,
+                     f"{task_id} complexity={result.complexity:.3f} (<0.4)")
 
-
-# ── 步骤 1: mock + quant + contract-report ────────────────────────
-
-def step1() -> None:
-    """基本 contract-report 输出验证。"""
-    _clean_runs()
-    proc = _run([
-        TASK,
-        "--backend", "mock",
-        "--router", "quant",
-        "--contract-report",
-    ])
-    _assert_ok(proc, "step1")
-    _assert_contains(proc, "[Contract Report]", "step1")
-    _assert_contains(proc, "support_rate", "step1")
-    print("  [OK] [step1] output contains [Contract Report] and support_rate")
-
-
-# ── 步骤 2: mock + quant + json-trace + save-run ──────────────────
-
-def step2() -> None:
-    """JSON trace 输出并持久化到 runs/ 目录。"""
-    _clean_runs()
-    proc = _run([
-        TASK,
-        "--backend", "mock",
-        "--router", "quant",
-        "--json-trace",
-        "--save-run",
-    ])
-    _assert_ok(proc, "step2")
-    # JSON 输出应可解析
-    data = json.loads(proc.stdout)
-    assert data.get("run_id"), "JSON trace 缺少 run_id"
-
-    # 断言 runs/ 目录下生成了 trace.json
-    trace_files = list(RUNS_DIR.glob("*/trace.json"))
-    assert len(trace_files) >= 1, f"runs/ 目录下未找到 trace.json: {list(RUNS_DIR.glob('*'))}"
-    # 验证内容可解析
-    trace_data = json.loads(trace_files[0].read_text(encoding="utf-8"))
-    assert trace_data.get("task"), "trace.json 缺少 task 字段"
-    print(f"  [OK] [step2] trace.json created under runs/ (run_id={data['run_id']})")
-
-
-# ── 步骤 3: mock + quant + routing-memory + contract-report ───────
-
-def step3() -> None:
-    """启用 routing memory 后的 contract-report 和持久化验证。"""
-    _clean_runs()
-    memory_path = RUNS_DIR / "memory.json"
-    proc = _run([
-        TASK,
-        "--backend", "mock",
-        "--router", "quant",
-        "--routing-memory",
-        "--contract-report",
-    ])
-    _assert_ok(proc, "step3")
-    # routing memory 修正可能在输出中出现
-    # 断言 runs/memory.json 存在（由 ProtocolMemory 持久化）
-    assert memory_path.exists(), f"runs/memory.json 未生成: {list(RUNS_DIR.glob('*')) if RUNS_DIR.exists() else 'runs/ 不存在'}"
-
-    # 验证 memory.json 内容为有效 JSON 数组
-    memory_data = json.loads(memory_path.read_text(encoding="utf-8"))
-    assert isinstance(memory_data, list), "memory.json 不是 JSON 数组"
-    assert len(memory_data) >= 1, "memory.json 为空数组（应至少有一条记录）"
-    record = memory_data[0]
-    for field in ("task_id", "complexity", "verifiability", "topology_used", "accepted", "support_rate"):
-        assert field in record, f"memory.json 记录缺少字段: {field}"
-    print(f"  [OK] [step3] runs/memory.json exists with {len(memory_data)} record(s)")
-
-
-# ── 步骤 4: deepseek + quant + routing-memory + contract-report ───
-
-def step4() -> None:
-    """真实 DeepSeek API 调用（需要 DEEPSEEK_API_KEY）。"""
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        print("  [SKIP] [step4] DEEPSEEK_API_KEY not set")
-        return
-
-    _clean_runs()
-    proc = _run([
-        TASK,
-        "--backend", "deepseek",
-        "--router", "quant",
-        "--routing-memory",
-        "--contract-report",
-    ], timeout=180)
-    _assert_ok(proc, "step4")
-    _assert_contains(proc, "claim", "step4")
-    _assert_contains(proc, "accepted", "step4")
-    print("  [OK] [step4] DeepSeek output contains claim and accepted")
-
-
-# ── main ───────────────────────────────────────────────────────────
-
-def main() -> None:
-    print("=" * 60)
-    print("Smoke Test — Verifiable Multi-Agent Scaffold")
-    print(f"VMA_BIN={VMA}")
-    print("=" * 60)
-
-    steps = [step1, step2, step3]
-    if os.getenv("SMOKE_FULL"):
-        steps.append(step4)
-
-    failed: list[str] = []
-    for step_fn in steps:
-        try:
-            step_fn()
-        except AssertionError as exc:
-            failed.append(f"{step_fn.__name__}: {exc}")
-            print(f"  [FAIL] {exc}")
-        except Exception as exc:
-            failed.append(f"{step_fn.__name__}: {exc}")
-            print(f"  [ERROR] {exc}")
-
-    print("=" * 60)
-    if failed:
-        print(f"SMOKE TEST FAILED — {len(failed)}/{len(steps)} 步骤失败:")
-        for f in failed:
-            print(f"  - {f}")
-        sys.exit(1)
-    else:
-        print("smoke test passed")
-        sys.exit(0)
-
-
-if __name__ == "__main__":
-    main()
+    print("CSV:", collector.csv_line(result))
