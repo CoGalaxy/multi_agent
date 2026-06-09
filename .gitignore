@@ -11,7 +11,9 @@ build/
 .env
 data/*.jsonl
 !data/.gitkeep
+runs/
 .claude/
 .vscode/
 logs/
 pid/
+.codex-ppt-midterm-defense/

@@ -28,7 +28,8 @@ class CapabilityNeeds(BaseModel):
 
 class TopologySpec(BaseModel):
     task_type: TaskType
-    tci: float = Field(ge=0.0, le=1.0)
+    complexity: float = Field(ge=0.0, le=1.0)
+    verifiability: float = Field(ge=0.0, le=1.0)
     capability_needs: CapabilityNeeds
     max_nodes: int = Field(ge=1)
     max_edges: int = Field(ge=0)

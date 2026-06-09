@@ -1,24 +1,84 @@
 from __future__ import annotations
 
-from verifiable_multi_agent.complexity import ComplexityFeatures, InputRequirements
+import re
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel
+
 from verifiable_multi_agent.contracts import TaskProfile, Topology
 from verifiable_multi_agent.routing_spec import CapabilityNeeds, TaskType, TopologySpec
 
+if TYPE_CHECKING:
+    from verifiable_multi_agent.memory import ProtocolMemory
+
+
+class InputRequirements(BaseModel):
+    """任务输入需求分析 — 从任务文本推断所需能力。"""
+
+    requires_material: bool = False
+    material_provided: bool = True
+    requires_external_query: bool = False
+    requires_database: bool = False
+    requires_destructive_action: bool = False
+    requires_verification: bool = False
+    requires_comparison: bool = False
+
+
+def infer_input_requirements(task: str) -> InputRequirements:
+    """从任务文本推断输入需求和所需能力。"""
+    text = task.lower()
+    requires_material = _contains_any(
+        text,
+        [
+            "given material", "provided material", "provided context",
+            "rag", "corpus", "document collection",
+            "根据给定材料", "给定材料", "根据材料", "根据以下材料",
+            "以下材料", "材料：", "资料库", "文档库", "检索材料", "rag资料",
+        ],
+    )
+    material_provided = not requires_material or _has_inline_material(task)
+    requires_external_query = _contains_any(text, ["query", "search", "lookup", "查询", "搜索", "检索"])
+    requires_database = _contains_any(text, ["database", "db", "数据库", "订单"])
+    requires_destructive_action = _contains_any(text, ["delete", "remove", "drop", "删除", "清空", "销毁"])
+    requires_verification = _contains_any(text, ["verify", "validate", "check", "audit", "验证", "核验", "检查", "审查"])
+    requires_comparison = _contains_any(text, ["compare", "comparison", "versus", "vs", "比较", "对比", "差异"])
+    return InputRequirements(
+        requires_material=requires_material,
+        material_provided=material_provided,
+        requires_external_query=requires_external_query,
+        requires_database=requires_database,
+        requires_destructive_action=requires_destructive_action,
+        requires_verification=requires_verification,
+        requires_comparison=requires_comparison,
+    )
+
+
+# 拓扑升级映射（与 router.py 保持一致）
+_TOPOLOGY_UPGRADE = {
+    Topology.SINGLE_AGENT: Topology.SUPERVISOR_WORKER,
+    Topology.SUPERVISOR_WORKER: Topology.REVIEW_LOOP,
+}
+
 
 class QuantitativeRouter:
+    """定量路由器 — 基于任务画像和输入需求生成 TopologySpec。
+
+    使用新的二维画像 (complexity, verifiability) 替代旧的六维 TCI。
+    支持可选的 ProtocolMemory 修正：检索历史相似任务，若邻居失败率
+    > 0.5 且当前拓扑不是 REVIEW_LOOP，则自动升级一级。
+    """
+
     def route(
         self,
         profile: TaskProfile,
-        features: ComplexityFeatures,
         requirements: InputRequirements,
+        memory: "ProtocolMemory | None" = None,
     ) -> TopologySpec:
         task_type = _task_type(profile, requirements)
         reasons = [
-            f"TCI={features.tci:.3f} from horizon={features.horizon:.2f}, "
-            f"dependency_depth={features.dependency_depth:.2f}, tool_burden={features.tool_burden:.2f}, "
-            f"evidence_burden={features.evidence_burden:.2f}, uncertainty={features.uncertainty:.2f}, risk={features.risk:.2f}",
+            f"complexity={profile.complexity:.2f}, "
+            f"verifiability={profile.verifiability:.2f}",
         ]
-        reasons.extend(features.signals)
 
         blocked = False
         block_reason = None
@@ -27,14 +87,26 @@ class QuantitativeRouter:
             block_reason = "missing material: task requires given material but no material content was provided"
             reasons.append("blocked_missing_material")
 
+        # 使用 complexity 替代旧 TCI 进行能力需求判断
+        needs_planning = profile.complexity >= 0.30 or profile.verifiability >= 0.40
+        needs_verification = requirements.requires_verification or profile.verifiability >= 0.40
+        needs_safety = profile.verifiability >= 0.80 or requirements.requires_destructive_action
+
         needs = CapabilityNeeds(
-            planning=features.tci >= 0.30 or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
+            planning=needs_planning or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
             tool_execution=requirements.requires_external_query or requirements.requires_database,
             material_grounding=requirements.requires_material,
-            verification=requirements.requires_verification or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
-            safety_review=features.risk >= 0.50 or requirements.requires_destructive_action,
-            synthesis=features.tci >= 0.30 or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
+            verification=needs_verification or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
+            safety_review=needs_safety,
+            synthesis=needs_planning or task_type in {TaskType.COMPARISON, TaskType.MATERIAL_GROUNDED},
         )
+
+        if requirements.requires_comparison:
+            reasons.append("signal=comparison")
+        if requirements.requires_verification:
+            reasons.append("signal=verification_required")
+        if requirements.requires_destructive_action:
+            reasons.append("signal=destructive_action")
 
         max_review_loops = 1 if needs.safety_review else 0
         max_tool_calls = 3 if needs.tool_execution else 0
@@ -53,9 +125,35 @@ class QuantitativeRouter:
             max_nodes += 1
         max_edges = max(0, max_nodes - 1 + max_review_loops)
 
+        # ── Memory 修正 ─────────────────────────────────────────
+        if memory is not None:
+            neighbors = memory.query(profile.complexity, profile.verifiability, k=3)
+            if neighbors:
+                fail_rate = memory.historical_fail_rate(neighbors)
+                # 使用与 topology_from_spec 相同的矩阵判断当前拓扑
+                current_topology = _matrix_topology(
+                    profile.complexity, profile.verifiability
+                )
+                if fail_rate > 0.5 and current_topology != Topology.REVIEW_LOOP:
+                    upgraded = _TOPOLOGY_UPGRADE[current_topology]
+                    # 升级能力需求以匹配新拓扑
+                    if upgraded == Topology.SUPERVISOR_WORKER:
+                        needs.planning = True
+                        needs.synthesis = True
+                    elif upgraded == Topology.REVIEW_LOOP:
+                        needs.planning = True
+                        needs.synthesis = True
+                        needs.verification = True
+                        max_review_loops = max(max_review_loops, 1)
+                    reasons.append(
+                        f"memory correction: historical fail rate={fail_rate:.3f}, "
+                        f"upgraded to {upgraded.value.upper()}"
+                    )
+
         return TopologySpec(
             task_type=task_type,
-            tci=features.tci,
+            complexity=profile.complexity,
+            verifiability=profile.verifiability,
             capability_needs=needs,
             max_nodes=max_nodes,
             max_edges=max_edges,
@@ -68,14 +166,20 @@ class QuantitativeRouter:
 
 
 def topology_from_spec(spec: TopologySpec) -> Topology:
-    needs = spec.capability_needs
+    """从 TopologySpec 映射到 Topology，与 router.py 决策矩阵对齐。
+
+    决策矩阵：
+      complexity < 0.4  AND verifiability < 0.4  → SINGLE_AGENT
+      complexity >= 0.4 AND verifiability < 0.4  → SUPERVISOR_WORKER
+      其他（verifiability >= 0.4）               → REVIEW_LOOP
+    """
     if spec.blocked:
         return Topology.SINGLE_AGENT
-    if needs.safety_review or needs.critique or needs.revision:
-        return Topology.REVIEW_LOOP
-    if needs.planning or needs.material_grounding or needs.tool_execution or needs.synthesis:
+    if spec.complexity < 0.4 and spec.verifiability < 0.4:
+        return Topology.SINGLE_AGENT
+    if spec.complexity >= 0.4 and spec.verifiability < 0.4:
         return Topology.SUPERVISOR_WORKER
-    return Topology.SINGLE_AGENT
+    return Topology.REVIEW_LOOP
 
 
 def explain_topology_spec(spec: TopologySpec) -> str:
@@ -86,7 +190,7 @@ def explain_topology_spec(spec: TopologySpec) -> str:
 
 
 def _task_type(profile: TaskProfile, requirements: InputRequirements) -> TaskType:
-    if requirements.requires_destructive_action or profile.risk >= 0.50:
+    if requirements.requires_destructive_action or profile.verifiability >= 0.80:
         return TaskType.HIGH_RISK_OPERATION
     if requirements.requires_material:
         return TaskType.MATERIAL_GROUNDED
@@ -94,6 +198,28 @@ def _task_type(profile: TaskProfile, requirements: InputRequirements) -> TaskTyp
         return TaskType.TOOL_QUERY
     if requirements.requires_comparison:
         return TaskType.COMPARISON
-    if profile.step_count <= 1 and profile.risk < 0.20 and profile.tool_need < 0.20:
+    if profile.complexity < 0.25 and profile.verifiability < 0.25:
         return TaskType.SIMPLE_EXPLANATION
     return TaskType.GENERAL
+
+
+def _contains_any(text: str, needles: list[str]) -> bool:
+    return any(needle in text for needle in needles)
+
+
+def _has_inline_material(task: str) -> bool:
+    lower_task = task.lower()
+    markers = [
+        "：", ":", "\n", "材料如下", "如下材料", "以下材料", "材料：",
+        "资料库", "文档库", "rag", "corpus", "AutoGen：", "CAMEL：",
+    ]
+    return any(marker.lower() in lower_task for marker in markers)
+
+
+def _matrix_topology(complexity: float, verifiability: float) -> Topology:
+    """二维决策矩阵 — 与 router.py 和 topology_from_spec 保持一致。"""
+    if complexity < 0.4 and verifiability < 0.4:
+        return Topology.SINGLE_AGENT
+    if complexity >= 0.4 and verifiability < 0.4:
+        return Topology.SUPERVISOR_WORKER
+    return Topology.REVIEW_LOOP

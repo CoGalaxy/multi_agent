@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from verifiable_multi_agent.agents import RuleBasedAgent
+from verifiable_multi_agent.agents import LLMAgent, RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, ContractMessage, TaskProfile, Topology, VerificationResult
+from verifiable_multi_agent.rag import SimpleRagRetriever
 from verifiable_multi_agent.topology.graph import AgentNode, AgentType, CollaborationGraph
 from verifiable_multi_agent.topology.validator import validate_graph
 from verifiable_multi_agent.verifier import verify_contracts
 
 
 class GraphExecutor:
-    def __init__(self, backend: LlmBackend | None = None) -> None:
+    def __init__(self, backend: LlmBackend | None = None, retriever: SimpleRagRetriever | None = None) -> None:
         self.backend = backend
+        self.retriever = retriever
 
     def execute(
         self,
@@ -76,7 +78,40 @@ class GraphExecutor:
     def _run_node(self, task: str, node: AgentNode, context: list[ContractMessage]) -> ContractMessage:
         role = _role_for_node(node.type)
         stage_note = f"Graph node={node.type.value}; config={node.config}"
-        message = RuleBasedAgent(role, backend=self.backend).run(
+        if node.type == AgentType.RESEARCHER and self.retriever and self.retriever.available:
+            hits = self.retriever.search(task)
+            if hits:
+                evidence = [hit.evidence_line() for hit in hits]
+                stage_note = (
+                    f"{stage_note}\nRetrieved RAG evidence:\n"
+                    + "\n".join(f"- {line}" for line in evidence)
+                )
+                message = self._make_agent(role).run(
+                    task,
+                    context,
+                    subtask=_subtask_for_node(node.type),
+                    action="Retrieve top-k RAG passages and ground downstream execution in them.",
+                    stage_note=stage_note,
+                )
+                message.evidence = evidence
+                message.metadata.update(
+                    {
+                        "node_id": node.id,
+                        "node_type": node.type.value,
+                        "node_config": node.config,
+                        "rag_hits": [
+                            {
+                                "id": hit.document.id,
+                                "title": hit.document.title,
+                                "source": hit.document.source,
+                                "score": hit.score,
+                            }
+                            for hit in hits
+                        ],
+                    }
+                )
+                return message
+        message = self._make_agent(role).run(
             task,
             context,
             subtask=_subtask_for_node(node.type),
@@ -107,6 +142,12 @@ class GraphExecutor:
             trace.metadata["graph_execution"]["review_loops_used"] = loops_used
             trace.verification = verify_contracts(trace.messages)
         return trace
+
+    def _make_agent(self, role: AgentRole) -> RuleBasedAgent | LLMAgent:
+        """根据 backend 类型选择合适的 Agent 实现。"""
+        if self.backend and self.backend.is_real_llm:
+            return LLMAgent(role, self.backend)
+        return RuleBasedAgent(role, backend=self.backend)
 
 
 def _role_for_node(node_type: AgentType) -> AgentRole:

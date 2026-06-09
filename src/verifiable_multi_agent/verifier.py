@@ -4,6 +4,7 @@
 Layer 1 — 结构验证 (verify_contracts):
   零成本 rule-based 检查：claim 是否有 evidence、action 是否非空、
   高不确定性是否伴随预算提示。始终执行，作为快速 gate。
+  support_rate 使用关键词重叠逐条评估 evidence 与 claim 的相关性。
 
 Layer 2 — 语义验证 (SemanticVerifier):
   用 LLM 检查内容质量：是否跑题、evidence 是否真实支撑 claim、
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from verifiable_multi_agent.contracts import ContractMessage, VerificationResult
 
@@ -56,7 +58,13 @@ JSON:"""
 
 
 def verify_contracts(messages: list[ContractMessage]) -> VerificationResult:
-    """Layer 1: 结构验证 — 零成本 rule-based gate。"""
+    """Layer 1: 结构验证 — 零成本 rule-based gate。
+
+    support_rate 使用关键词重叠逐条评估：
+      对每条 ContractMessage 的 evidence 列表，逐条检查是否与 claim
+      有关键词重叠。重叠 ≥ 1 个 token 即计为有效支撑。
+      support_rate = 有效支撑的 evidence 条数 / evidence 总条数。
+    """
     if not messages:
         return VerificationResult(
             accepted=False, support_rate=0.0,
@@ -64,25 +72,68 @@ def verify_contracts(messages: list[ContractMessage]) -> VerificationResult:
         )
 
     violations: list[str] = []
-    supported = 0
+    total_evidence_items = 0
+    supported_evidence_items = 0
+
     for message in messages:
-        if message.has_support:
-            supported += 1
-        else:
-            violations.append(f"{message.role.value}:{message.id}:unsupported_claim")
+        # 逐条 evidence 检查与 claim 的关键词重叠
+        ev_items = message.evidence
+        total_evidence_items += len(ev_items)
+        if ev_items:
+            for ev in ev_items:
+                if _evidence_supports_claim(ev, message.claim):
+                    supported_evidence_items += 1
+
+        # 结构违规检查
+        if not message.evidence:
+            violations.append(f"{message.role.value}:{message.id}:missing_evidence")
+        if not message.claim.strip():
+            violations.append(f"{message.role.value}:{message.id}:empty_claim")
         if not message.action.strip():
             violations.append(f"{message.role.value}:{message.id}:missing_action")
         if message.uncertainty > 0.8 and message.budget_hint <= 0:
             violations.append(f"{message.role.value}:{message.id}:high_uncertainty_without_budget")
 
-    support_rate = supported / len(messages)
-    accepted = support_rate >= 0.8 and not any("missing_action" in item for item in violations)
+    support_rate = (
+        supported_evidence_items / total_evidence_items
+        if total_evidence_items > 0
+        else 0.0
+    )
+    accepted = support_rate >= 0.5 and not any("missing_action" in item for item in violations)
     return VerificationResult(
         accepted=accepted,
         support_rate=round(support_rate, 3),
         violations=violations,
         next_action="accept" if accepted else "escalate",
     )
+
+
+def _evidence_supports_claim(evidence: str, claim: str) -> bool:
+    """检查单条 evidence 是否与 claim 有关键词重叠。
+
+    对中英文分别处理：
+    - 英文：提取字母 token 集合，需 ≥ 2 个共同词根才计为支撑
+    - 中文：提取 evidence 中所有 2-gram，需 ≥ 2 个出现在 claim 中才计为支撑
+      单字匹配或仅 1 个 2-gram 匹配不计数（排除偶然重叠）
+    """
+    if not evidence.strip() or not claim.strip():
+        return False
+    ev_lower = evidence.lower()
+    claim_lower = claim.lower()
+    # 英文 token 重叠 — 需要 ≥ 2 个共同词（排除单字/冠词偶然匹配）
+    ev_en = set(re.findall(r"[a-zA-Z_]{3,}", ev_lower))
+    claim_en = set(re.findall(r"[a-zA-Z_]{3,}", claim_lower))
+    if len(ev_en & claim_en) >= 2:
+        return True
+    # 中文 2-gram 重叠 — 需要 ≥ 2 个不同的 2-gram 匹配
+    matched_bigrams: set[str] = set()
+    for i in range(len(evidence) - 1):
+        bigram = evidence[i:i + 2]
+        if "一" <= bigram[0] <= "鿿" and bigram in claim:
+            matched_bigrams.add(bigram)
+            if len(matched_bigrams) >= 2:
+                return True
+    return False
 
 
 class SemanticVerifier:
@@ -118,20 +169,32 @@ class SemanticVerifier:
         try:
             raw = self._backend.complete(system="", user=prompt)
             data = json.loads(raw)
-            # 同步计算 support_rate
-            supported = sum(1 for m in messages if m.has_support)
             return VerificationResult(
                 accepted=bool(data.get("accepted", False)),
-                support_rate=round(supported / len(messages), 3),
+                support_rate=_compute_support_rate(messages),
                 violations=data.get("violations", []),
                 next_action=data.get("next_action", "accept"),
             )
         except (json.JSONDecodeError, KeyError) as exc:
             logger.warning("Semantic verifier JSON parse failed: %s", exc)
-            # fallback: 接受但标注解析失败
             return VerificationResult(
                 accepted=True,
-                support_rate=1.0,
+                support_rate=_compute_support_rate(messages),
                 violations=[f"semantic_verifier_parse_error: {exc}"],
                 next_action="accept",
             )
+
+
+def _compute_support_rate(messages: list[ContractMessage]) -> float:
+    """逐条 evidence 与 claim 的关键词重叠率。
+
+    support_rate = 有重叠的 evidence 条数 / evidence 总条数。
+    """
+    total = 0
+    supported = 0
+    for m in messages:
+        total += len(m.evidence)
+        for ev in m.evidence:
+            if _evidence_supports_claim(ev, m.claim):
+                supported += 1
+    return round(supported / total, 3) if total > 0 else 0.0

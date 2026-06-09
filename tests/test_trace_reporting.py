@@ -22,12 +22,10 @@ def _sample_trace() -> AgentTrace:
         topology=Topology.SUPERVISOR_WORKER,
         profile=TaskProfile(
             task="比较两个多智能体框架，并验证比较标准。",
-            tool_need=0.6,
-            uncertainty=0.75,
-            step_count=2,
-            risk=0.2,
+            complexity=0.55,
+            verifiability=0.75,
         ),
-        topology_reason="multi-step task with moderate uncertainty",
+        topology_reason="complexity=0.55, verifiability=0.75 → SUPERVISOR_WORKER",
         final_answer="AutoGen 更适合复杂工具协作，CAMEL 更适合轻量基线。",
     )
     trace.messages = [
@@ -76,7 +74,8 @@ def test_run_trace_json_contains_required_fields(tmp_path: Path) -> None:
 
     assert data["run_id"] == "run-test"
     assert data["task"]
-    assert data["task_profile"]["complexity"] == 0.471
+    assert data["task_profile"]["complexity"] == 0.55
+    assert data["task_profile"]["verifiability"] == 0.75
     assert data["selected_topology"] == "supervisor_worker"
     assert data["agents_executed"] == ["planner", "executor", "executor", "verifier"]
     assert len(data["contract_messages"]) == 4
@@ -112,7 +111,8 @@ def test_contract_report_format_matches_human_readable_sections() -> None:
     rendered = format_contract_report(_sample_trace())
 
     assert "[Task Profile]" in rendered
-    assert "tool_need=0.60" in rendered
+    assert "complexity=0.55" in rendered
+    assert "verifiability=0.75" in rendered
     assert "[Topology]" in rendered
     assert "selected=SUPERVISOR_WORKER" in rendered
     assert "[Contract Report]" in rendered

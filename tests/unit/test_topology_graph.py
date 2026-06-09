@@ -13,13 +13,14 @@ from verifiable_multi_agent.topology.validator import validate_graph
 
 
 def _profile(task: str = "task") -> TaskProfile:
-    return TaskProfile(task=task, tool_need=0.0, uncertainty=0.0, step_count=1, risk=0.0)
+    return TaskProfile(task=task, complexity=0.4, verifiability=0.4)
 
 
 def _spec(needs: CapabilityNeeds, max_nodes: int = 8, blocked: bool = False) -> TopologySpec:
     return TopologySpec(
         task_type=TaskType.GENERAL,
-        tci=0.4,
+        complexity=0.4,
+        verifiability=0.4,
         capability_needs=needs,
         max_nodes=max_nodes,
         max_edges=max(max_nodes - 1, 0),
@@ -74,6 +75,52 @@ def test_tool_execution_graph_includes_mock_tool_executor_message() -> None:
     assert _types(graph) == ["planner", "tool_executor", "executor", "verifier", "synthesizer"]
     assert "tool_executor" in trace.metadata["graph_execution"]["executed_nodes"]
     assert any(message.metadata.get("node_type") == "tool_executor" for message in trace.messages)
+
+
+def test_material_and_tool_graph_augments_evidence_template() -> None:
+    graph = ConstrainedTopologyGenerator().generate(
+        _spec(
+            CapabilityNeeds(
+                planning=True,
+                material_grounding=True,
+                tool_execution=True,
+                verification=True,
+                synthesis=True,
+            ),
+            max_nodes=6,
+        )
+    )
+
+    assert _types(graph) == ["planner", "researcher", "tool_executor", "executor", "verifier", "synthesizer"]
+    assert "base_template=evidence_grounded_template" in graph.generation_reasons
+    assert "augment=insert_tool_executor_before_executor" in graph.generation_reasons
+
+
+def test_comparison_critique_revision_augments_comparison_template() -> None:
+    spec = TopologySpec(
+        task_type=TaskType.COMPARISON,
+        complexity=0.5,
+        verifiability=0.6,
+        capability_needs=CapabilityNeeds(
+            planning=True,
+            verification=True,
+            synthesis=True,
+            critique=True,
+            revision=True,
+        ),
+        max_nodes=6,
+        max_edges=5,
+        max_review_loops=0,
+        max_tool_calls=0,
+        generation_reasons=["unit-test"],
+    )
+
+    graph = ConstrainedTopologyGenerator().generate(spec)
+
+    assert _types(graph) == ["planner", "executor", "critic", "reviser", "verifier", "synthesizer"]
+    assert "base_template=comparison_template" in graph.generation_reasons
+    assert "augment=insert_critic_after_executor" in graph.generation_reasons
+    assert "augment=insert_reviser_after_critic" in graph.generation_reasons
 
 
 def test_code_testing_budget_failure_reports_validation_errors() -> None:

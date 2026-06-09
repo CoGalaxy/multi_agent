@@ -20,14 +20,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from verifiable_multi_agent.agents import RuleBasedAgent
+from uuid import uuid4
+
+from verifiable_multi_agent.agents import LLMAgent, RuleBasedAgent
 from verifiable_multi_agent.backends import LlmBackend
-from verifiable_multi_agent.complexity import infer_complexity_features, infer_input_requirements
-from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, ContractMessage, Topology
-from verifiable_multi_agent.memory import JsonlProtocolMemory
+from verifiable_multi_agent.contracts import AgentRole, AgentTrace, Budget, ContractMessage, TaskProfile, Topology
+from verifiable_multi_agent.memory import JsonlProtocolMemory, MemoryRecord, ProtocolMemory
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
-from verifiable_multi_agent.quantitative_router import QuantitativeRouter, explain_topology_spec, topology_from_spec
-from verifiable_multi_agent.router import explain_topology, select_topology
+from verifiable_multi_agent.quantitative_router import (
+    QuantitativeRouter,
+    explain_topology_spec,
+    infer_input_requirements,
+    topology_from_spec,
+)
+from verifiable_multi_agent.rag import SimpleRagRetriever
+from verifiable_multi_agent.router import explain_topology, select_topology_with_memory
 from verifiable_multi_agent.topology.executor import GraphExecutor
 from verifiable_multi_agent.topology.generator import ConstrainedTopologyGenerator
 from verifiable_multi_agent.verifier import SemanticVerifier, verify_contracts
@@ -40,27 +47,31 @@ class Orchestrator:
         backend: LlmBackend | None = None,
         profiler: LlmProfiler | None = None,
         router_mode: str = "legacy",
+        rag_corpus_path: Path | None = None,
+        routing_memory: ProtocolMemory | None = None,
     ) -> None:
         self.memory = JsonlProtocolMemory(memory_path or Path("data/protocol_memory.jsonl"))
         self.backend = backend
         self.profiler = profiler
         self.router_mode = router_mode
+        self.retriever = SimpleRagRetriever(rag_corpus_path) if rag_corpus_path else None
         self._semantic = SemanticVerifier(backend) if (backend and backend.is_real_llm) else None
+        self._routing_memory = routing_memory
 
     def solve(self, task: str, budget: Budget | None = None) -> AgentTrace:
         budget = budget or Budget()
         profile = self.profiler.profile(task) if self.profiler else profile_task(task)
         topology_spec = None
-        features = None
         requirements = None
         if self.router_mode == "quant":
             requirements = infer_input_requirements(task)
-            features = infer_complexity_features(task, profile)
-            topology_spec = QuantitativeRouter().route(profile, features, requirements)
+            topology_spec = QuantitativeRouter().route(
+                profile, requirements, memory=self._routing_memory
+            )
             topology = topology_from_spec(topology_spec)
             topology_reason = explain_topology_spec(topology_spec)
             graph = ConstrainedTopologyGenerator().generate(topology_spec)
-            trace = GraphExecutor(backend=self.backend).execute(
+            trace = GraphExecutor(backend=self.backend, retriever=self.retriever).execute(
                 task=task,
                 graph=graph,
                 profile=profile,
@@ -68,14 +79,17 @@ class Orchestrator:
                 topology_reason=topology_reason,
             )
             trace.metadata["router_mode"] = "quant"
-            trace.metadata["complexity_features"] = features.model_dump(mode="json") | {"tci": features.tci}
+            trace.metadata["task_profile"] = profile.model_dump(mode="json")
             trace.metadata["input_requirements"] = requirements.model_dump(mode="json")
             trace.metadata["topology_spec"] = topology_spec.model_dump(mode="json")
             self.memory.store(trace)
+            self._add_routing_record(profile, trace)
             return trace
         else:
-            topology = select_topology(profile)
-            topology_reason = explain_topology(profile, topology)
+            topology, routing_reasons = select_topology_with_memory(
+                profile, memory=self._routing_memory
+            )
+            topology_reason = explain_topology(profile, topology, reasons=routing_reasons)
         prior_protocols = self.memory.retrieve(task)
 
         trace = AgentTrace(
@@ -85,19 +99,6 @@ class Orchestrator:
             topology_reason=topology_reason,
             execution_summary=[topology_reason],
         )
-        if topology_spec and features and requirements:
-            trace.metadata["router_mode"] = "quant"
-            trace.metadata["complexity_features"] = features.model_dump(mode="json") | {"tci": features.tci}
-            trace.metadata["input_requirements"] = requirements.model_dump(mode="json")
-            trace.metadata["topology_spec"] = topology_spec.model_dump(mode="json")
-            if topology_spec.blocked:
-                trace.verification = verify_contracts(trace.messages)
-                trace.verification.accepted = False
-                trace.verification.violations.append(topology_spec.block_reason or "blocked")
-                trace.verification.next_action = "blocked"
-                trace.final_answer = topology_spec.block_reason
-                self.memory.store(trace)
-                return trace
         # 阶段 0: 如果有相似任务的协作模式，先注入复用提示
         if prior_protocols:
             trace.messages.append(
@@ -123,7 +124,7 @@ class Orchestrator:
             budget.consume()
             trace.execution_summary.append(f"{_role_label(step['role'], task)}: {step['subtask']}")
             trace.messages.append(
-                RuleBasedAgent(step["role"], backend=self.backend).run(
+                self._make_agent(step["role"]).run(
                     task,
                     trace.messages,
                     subtask=step["subtask"],
@@ -142,7 +143,7 @@ class Orchestrator:
             for role in (AgentRole.VERIFIER, AgentRole.SYNTHESIZER):
                 budget.consume()
                 trace.messages.append(
-                    RuleBasedAgent(role, backend=self.backend).run(
+                    self._make_agent(role).run(
                         task,
                         trace.messages,
                         stage_note=escalation_note,
@@ -159,7 +160,7 @@ class Orchestrator:
 
         # 阶段 3: 综合最终答案
         synth_stage_label = "执行摘要" if _contains_cjk(task) else "Execution summary"
-        synth = RuleBasedAgent(AgentRole.SYNTHESIZER, backend=self.backend).run(
+        synth = self._make_agent(AgentRole.SYNTHESIZER).run(
             task,
             trace.messages,
             subtask="合成最终答案" if _contains_cjk(task) else None,
@@ -170,7 +171,34 @@ class Orchestrator:
         trace.final_answer = synth.claim
         # 阶段 4: 通过的协作模式存入协议记忆
         self.memory.store(trace)
+        # 阶段 5: 路由决策存入路由记忆
+        self._add_routing_record(profile, trace)
         return trace
+
+    def _make_agent(self, role: AgentRole) -> RuleBasedAgent | LLMAgent:
+        """根据 backend 类型选择合适的 Agent 实现。
+
+        - 真实 LLM 后端（Ollama/DeepSeek/vLLM）→ LLMAgent
+        - mock / 无后端 → RuleBasedAgent（确定性模板）
+        """
+        if self.backend and self.backend.is_real_llm:
+            return LLMAgent(role, self.backend)
+        return RuleBasedAgent(role, backend=self.backend)
+
+    def _add_routing_record(self, profile: TaskProfile, trace: AgentTrace) -> None:
+        """将本次路由决策保存到 ProtocolMemory（若已启用）。"""
+        if self._routing_memory is None:
+            return
+        self._routing_memory.add(
+            MemoryRecord(
+                task_id=str(uuid4()),
+                complexity=profile.complexity,
+                verifiability=profile.verifiability,
+                topology_used=trace.topology.value,
+                accepted=trace.verification.accepted if trace.verification else False,
+                support_rate=trace.verification.support_rate if trace.verification else 0.0,
+            )
+        )
 
 
 def _roles_for(topology: Topology) -> tuple[AgentRole, ...]:

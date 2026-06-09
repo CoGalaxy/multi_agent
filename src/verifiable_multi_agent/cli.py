@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 
 from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend, OpenAICompatibleBackend
+from verifiable_multi_agent.memory import ProtocolMemory
 from verifiable_multi_agent.orchestrator import Orchestrator
 from verifiable_multi_agent.profiler import LlmProfiler
 from verifiable_multi_agent.reporting import format_contract_report
@@ -61,6 +62,8 @@ def solve(
     save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
     router: str = typer.Option("legacy", "--router", help="Router mode: legacy, rule, or quant."),
     show_topology: bool = typer.Option(False, "--show-topology", help="Show generated graph topology when available."),
+    rag_corpus: Path = typer.Option(Path("data/rag_corpus.jsonl"), "--rag-corpus", help="Local JSONL corpus for RAG evidence retrieval."),
+    routing_memory: bool = typer.Option(True, "--routing-memory/--no-routing-memory", help="Enable routing decision memory for topology correction."),
 ) -> None:
     load_env_file()
     llm = None
@@ -90,7 +93,15 @@ def solve(
         raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
     if router not in {"legacy", "rule", "quant"}:
         raise typer.BadParameter("router must be one of: legacy, rule, quant.")
-    trace = Orchestrator(memory_path=memory, backend=llm, profiler=profiler, router_mode=router).solve(task)
+    _routing_memory = ProtocolMemory("runs/memory.json") if routing_memory else None
+    trace = Orchestrator(
+        memory_path=memory,
+        backend=llm,
+        profiler=profiler,
+        router_mode=router,
+        rag_corpus_path=rag_corpus,
+        routing_memory=_routing_memory,
+    ).solve(task)
     run_trace = build_run_trace(trace)
     saved_path = save_run_trace(run_trace) if save_run else None
 
@@ -117,7 +128,11 @@ def solve(
     console.rule(labels["debug_trace"])
     console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
     console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
-    console.print(f"[bold]{labels['complexity']}:[/bold] {trace.profile.complexity}")
+    console.print(
+        f"[bold]{labels['complexity']}:[/bold] "
+        f"complexity={trace.profile.complexity:.2f}, "
+        f"verifiability={trace.profile.verifiability:.2f}"
+    )
     if show_topology:
         _print_generated_topology(trace)
     if trace.metadata.get("topology_spec"):
@@ -140,7 +155,11 @@ def solve(
 
 def _print_quant_router(topology_spec: dict) -> None:
     needs = [name for name, enabled in topology_spec["capability_needs"].items() if enabled]
-    console.print("[bold]TCI:[/bold] " + f"{topology_spec['tci']:.3f}")
+    console.print(
+        "[bold]Profile:[/bold] "
+        f"complexity={topology_spec['complexity']:.2f}, "
+        f"verifiability={topology_spec['verifiability']:.2f}"
+    )
     console.print("[bold]capability_needs:[/bold] " + ", ".join(needs))
     console.print("[bold]generation_reasons:[/bold]")
     for reason in topology_spec["generation_reasons"]:
