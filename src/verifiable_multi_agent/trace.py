@@ -25,6 +25,7 @@ class RunTrace(BaseModel):
     metrics: dict
     contract_report: ContractReport
     metadata: dict
+    topology_spec: dict | None = None
     generated_topology: dict | None = None
     graph_execution: dict | None = None
 
@@ -53,6 +54,7 @@ def build_run_trace(trace: AgentTrace, run_id: str | None = None) -> RunTrace:
         },
         contract_report=report,
         metadata=trace.metadata,
+        topology_spec=trace.metadata.get("topology_spec"),
         generated_topology=trace.metadata.get("generated_topology"),
         graph_execution=trace.metadata.get("graph_execution"),
     )

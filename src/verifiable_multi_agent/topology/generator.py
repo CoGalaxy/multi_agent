@@ -15,14 +15,12 @@ class ConstrainedTopologyGenerator:
             return CollaborationGraph(
                 blocked=True,
                 block_reason=spec.block_reason,
-                generation_reasons=generation_reasons + ["base_template=blocked_graph"],
+                generation_reasons=generation_reasons + ["compose=blocked_graph"],
                 constraints=constraints,
             )
 
-        selected, base_reason = self._base_template(spec)
-        generation_reasons.append(base_reason)
-        selected, augment_reasons = self._augment_template(selected, spec)
-        generation_reasons.extend(augment_reasons)
+        selected, compose_reasons = self._compose_nodes(spec)
+        generation_reasons.extend(compose_reasons)
         nodes = [
             AgentNode(
                 id=node_type.value,
@@ -47,96 +45,37 @@ class ConstrainedTopologyGenerator:
         graph.validation_errors = validate_graph(graph)
         return graph
 
-    def _base_template(self, spec: TopologySpec) -> tuple[list[AgentType], str]:
+    def _compose_nodes(self, spec: TopologySpec) -> tuple[list[AgentType], list[str]]:
         needs = spec.capability_needs
-        if needs.code_testing:
-            selected = [
-                AgentType.CODER,
-                AgentType.TESTER,
-                AgentType.REVISER,
-                AgentType.VERIFIER,
-                AgentType.SYNTHESIZER,
-            ]
-            if needs.planning:
-                selected.insert(0, AgentType.PLANNER)
-            return selected, "base_template=code_testing_template"
-        if needs.safety_review:
-            return [
-                AgentType.PLANNER,
-                AgentType.EXECUTOR,
-                AgentType.SAFETY_VERIFIER,
-                AgentType.VERIFIER,
-                AgentType.SYNTHESIZER,
-            ], "base_template=safety_review_template"
-        if needs.material_grounding:
-            return [
-                AgentType.PLANNER,
-                AgentType.RESEARCHER,
-                AgentType.EXECUTOR,
-                AgentType.VERIFIER,
-                AgentType.SYNTHESIZER,
-            ], "base_template=evidence_grounded_template"
-        if needs.tool_execution:
-            return [
-                AgentType.PLANNER,
-                AgentType.TOOL_EXECUTOR,
-                AgentType.EXECUTOR,
-                AgentType.VERIFIER,
-                AgentType.SYNTHESIZER,
-            ], "base_template=tool_assisted_template"
-        if needs.planning or needs.synthesis or spec.task_type.value == "comparison":
-            return [
-                AgentType.PLANNER,
-                AgentType.EXECUTOR,
-                AgentType.VERIFIER,
-                AgentType.SYNTHESIZER,
-            ], "base_template=comparison_template"
-        return [
-            AgentType.EXECUTOR,
-            AgentType.VERIFIER,
-            AgentType.SYNTHESIZER,
-        ], "base_template=simple_template"
-
-    def _augment_template(self, selected: list[AgentType], spec: TopologySpec) -> tuple[list[AgentType], list[str]]:
-        needs = spec.capability_needs
-        augmented = list(selected)
+        selected: list[AgentType] = []
         reasons: list[str] = []
 
-        if needs.material_grounding and AgentType.RESEARCHER not in augmented:
-            _insert_before(augmented, AgentType.RESEARCHER, AgentType.EXECUTOR)
-            reasons.append("augment=insert_researcher_before_executor")
-        if needs.tool_execution and AgentType.TOOL_EXECUTOR not in augmented:
-            _insert_before(augmented, AgentType.TOOL_EXECUTOR, AgentType.EXECUTOR)
-            reasons.append("augment=insert_tool_executor_before_executor")
-        if needs.critique and AgentType.CRITIC not in augmented:
-            _insert_after(augmented, AgentType.CRITIC, AgentType.EXECUTOR)
-            reasons.append("augment=insert_critic_after_executor")
-        if needs.revision and AgentType.REVISER not in augmented:
-            anchor = AgentType.CRITIC if AgentType.CRITIC in augmented else AgentType.EXECUTOR
-            _insert_after(augmented, AgentType.REVISER, anchor)
-            reasons.append(f"augment=insert_reviser_after_{anchor.value}")
-        if needs.safety_review and AgentType.SAFETY_VERIFIER not in augmented:
-            _insert_before(augmented, AgentType.SAFETY_VERIFIER, AgentType.VERIFIER)
-            reasons.append("augment=insert_safety_verifier_before_verifier")
-        if needs.verification and AgentType.VERIFIER not in augmented:
-            _insert_before(augmented, AgentType.VERIFIER, AgentType.SYNTHESIZER)
-            reasons.append("augment=restore_required_verifier")
-        if needs.synthesis and AgentType.SYNTHESIZER not in augmented:
-            augmented.append(AgentType.SYNTHESIZER)
-            reasons.append("augment=restore_required_synthesizer")
+        if needs.planning:
+            _append_unique(selected, AgentType.PLANNER, reasons)
+        if needs.material_grounding:
+            _append_unique(selected, AgentType.RESEARCHER, reasons)
+        if needs.tool_execution:
+            _append_unique(selected, AgentType.TOOL_EXECUTOR, reasons)
 
-        return augmented, reasons
+        if needs.code_testing:
+            _append_unique(selected, AgentType.CODER, reasons)
+            _append_unique(selected, AgentType.TESTER, reasons)
+        else:
+            _append_unique(selected, AgentType.EXECUTOR, reasons)
+
+        if needs.critique:
+            _append_unique(selected, AgentType.CRITIC, reasons)
+        if needs.revision or needs.code_testing:
+            _append_unique(selected, AgentType.REVISER, reasons)
+        if needs.safety_review:
+            _append_unique(selected, AgentType.SAFETY_VERIFIER, reasons)
+
+        _append_unique(selected, AgentType.VERIFIER, reasons)
+        _append_unique(selected, AgentType.SYNTHESIZER, reasons)
+        return selected, reasons
 
 
-def _insert_before(nodes: list[AgentType], node: AgentType, anchor: AgentType) -> None:
-    if anchor in nodes:
-        nodes.insert(nodes.index(anchor), node)
-    else:
+def _append_unique(nodes: list[AgentType], node: AgentType, reasons: list[str]) -> None:
+    if node not in nodes:
         nodes.append(node)
-
-
-def _insert_after(nodes: list[AgentType], node: AgentType, anchor: AgentType) -> None:
-    if anchor in nodes:
-        nodes.insert(nodes.index(anchor) + 1, node)
-    else:
-        nodes.append(node)
+        reasons.append(f"compose=add_{node.value}")

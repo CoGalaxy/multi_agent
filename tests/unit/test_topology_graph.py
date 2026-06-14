@@ -98,8 +98,8 @@ def test_material_and_tool_graph_augments_evidence_template() -> None:
     )
 
     assert _types(graph) == ["planner", "researcher", "tool_executor", "executor", "verifier", "synthesizer"]
-    assert "base_template=evidence_grounded_template" in graph.generation_reasons
-    assert "augment=insert_tool_executor_before_executor" in graph.generation_reasons
+    assert "compose=add_researcher" in graph.generation_reasons
+    assert "compose=add_tool_executor" in graph.generation_reasons
 
 
 def test_comparison_critique_revision_augments_comparison_template() -> None:
@@ -124,9 +124,19 @@ def test_comparison_critique_revision_augments_comparison_template() -> None:
     graph = ConstrainedTopologyGenerator().generate(spec)
 
     assert _types(graph) == ["planner", "executor", "critic", "reviser", "verifier", "synthesizer"]
-    assert "base_template=comparison_template" in graph.generation_reasons
-    assert "augment=insert_critic_after_executor" in graph.generation_reasons
-    assert "augment=insert_reviser_after_critic" in graph.generation_reasons
+    assert "compose=add_critic" in graph.generation_reasons
+    assert "compose=add_reviser" in graph.generation_reasons
+
+
+def test_code_testing_graph_uses_coder_tester_reviser_path() -> None:
+    graph = ConstrainedTopologyGenerator().generate(
+        _spec(CapabilityNeeds(planning=True, code_testing=True, verification=True, synthesis=True), max_nodes=6)
+    )
+
+    assert _types(graph) == ["planner", "coder", "tester", "reviser", "verifier", "synthesizer"]
+    assert "compose=add_coder" in graph.generation_reasons
+    assert "compose=add_tester" in graph.generation_reasons
+    assert "compose=add_reviser" in graph.generation_reasons
 
 
 def test_code_testing_budget_failure_reports_validation_errors() -> None:
@@ -227,6 +237,7 @@ def test_json_trace_contains_generated_topology_and_graph_execution(tmp_path, mo
 
     assert result.exit_code == 0
     data = json.loads(result.stdout)
+    assert data["topology_spec"]["capability_needs"]
     assert data["generated_topology"]["nodes"]
     assert data["graph_execution"]["enabled"]
     assert "planner" in data["graph_execution"]["executed_nodes"]

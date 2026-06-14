@@ -1,27 +1,29 @@
 # 可验证多智能体协同毕设原型
 
-本项目是硕士毕设用的本地最小多智能体协同系统，不按工业化系统处理。项目主线只保留 **量化路由**：
+本项目是面向毕设的本地最小多智能体协同系统，不按工业化系统处理。主线保留**量化路由**，并围绕真实大模型接口运行：
 
 ```text
 用户任务
--> TaskProfile
--> QuantitativeRouter
--> TopologySpec
--> CollaborationGraph
+-> 任务画像
+-> 量化路由器
+-> 拓扑规格
+-> 受约束协作图
 -> 多智能体协同
--> 真实 LLM API
+-> 真实大模型接口
 -> 运行轨迹和最终结果
 ```
 
-上面的英文名称是代码中的类名或字段名。在论文和说明文字中，可以对应表述为：
+代码中的主要类名对应关系：
 
 ```text
-TaskProfile        ：任务画像
-QuantitativeRouter ：量化路由器
-TopologySpec       ：拓扑规格
-CollaborationGraph ：协作图
-LLM API            ：大模型接口
-运行轨迹字段 trace ：运行轨迹
+TaskProfile              ：任务画像
+QuantitativeRouter       ：量化路由器
+InputRequirements        ：输入需求
+CapabilityNeeds          ：能力需求
+TopologySpec             ：拓扑规格
+ConstrainedTopologyGenerator：受约束拓扑生成器
+CollaborationGraph       ：协作图
+GraphExecutor            ：协作图执行器
 ```
 
 ## 三个研究内容
@@ -30,48 +32,29 @@ LLM API            ：大模型接口
 
 入口文件：`src/verifiable_multi_agent/contract_verification.py`
 
-核心数据结构：`ContractMessage`
+核心数据结构：`ContractMessage`、`VerificationResult`
 
-每个智能体输出都必须被约束为一条合约消息，包含：
-
-```text
-claim    ：该智能体当前给出的主张或结论
-evidence ：支撑主张的证据、上下文或上游消息
-action   ：该智能体本轮实际采取的动作
-```
-
-验证结果记录为 `VerificationResult`：
+每个智能体输出都被约束为结构化消息：
 
 ```text
-accepted     ：本轮协作是否通过验证
-support_rate ：证据对主张的支撑比例
-violations   ：缺失证据、缺失动作、空主张等问题
-next_action  ：下一步动作
+主张    ：当前智能体给出的结论或中间判断
+证据    ：支撑主张的上下文、上游消息或执行痕迹
+动作    ：当前智能体本轮实际采取的动作
 ```
 
-目前验证重点是结构化合约是否完整，以及证据与主张是否存在基本支撑关系。它不追求工业级审计，而是为了让毕设原型的协作过程可追踪、可检查、可展示。
+验证器检查消息是否有主张、证据和动作，并给出支持率、证据覆盖率、动作完整度和违规项。这个机制用于让协作过程可追踪、可检查、可展示。
 
 ### 2. 可量化路由驱动的受约束协作拓扑生成机制
 
-量化路由入口文件：`src/verifiable_multi_agent/quantitative_routing.py`
+量化路由入口文件：`src/verifiable_multi_agent/quantitative_router.py`
 
-拓扑生成入口文件：`src/verifiable_multi_agent/constrained_topology.py`
+拓扑生成入口文件：`src/verifiable_multi_agent/topology/generator.py`
 
 核心链路：
 
 ```text
-TaskProfile
--> QuantitativeRouter
--> TopologySpec
--> ConstrainedTopologyGenerator
--> CollaborationGraph
--> GraphExecutor
-```
-
-对应中文含义：
-
-```text
 任务画像
++ 输入需求
 -> 量化路由器
 -> 拓扑规格
 -> 受约束拓扑生成器
@@ -79,168 +62,170 @@ TaskProfile
 -> 协作图执行器
 ```
 
-任务画像使用两个维度描述任务：
+任务画像使用两个量化维度：
 
 ```text
-complexity    ：任务分解难度
-verifiability ：结果验证难度
+任务复杂度      ：任务是否需要拆解、规划或多步协作
+结果可验证性    ：结果是否需要更强验证、审查或安全检查
 ```
 
-量化路由器是这一研究内容中的量化决策层。它不直接执行智能体，而是把任务画像和输入需求转换成拓扑规格：
+输入需求用于识别任务文本中的显式信号：
 
 ```text
-TaskProfile(complexity, verifiability)
-+ InputRequirements
--> QuantitativeRouter
--> TopologySpec
+是否需要给定材料
+是否需要外部查询
+是否涉及数据库
+是否涉及破坏性操作
+是否明确要求验证
+是否属于比较任务
+是否需要代码生成或测试
+是否需要批判
+是否需要修订
+是否需要资料调研
+是否需要安全审查
 ```
 
-输入需求用于补充任务文本中的显式要求：
+量化路由器把这些信号映射为能力需求：
 
 ```text
-requires_material           ：是否需要给定材料
-requires_external_query     ：是否需要外部查询
-requires_database           ：是否涉及数据库查询描述
-requires_destructive_action ：是否涉及破坏性操作
-requires_verification       ：是否明确要求验证
-requires_comparison         ：是否属于比较任务
+规划能力
+材料依据能力
+工具执行能力
+代码测试能力
+批判能力
+修订能力
+安全审查能力
+验证能力
+最终合成能力
 ```
 
-拓扑规格记录量化路由后的能力需求：
+拓扑生成采用**受约束动态生成**，不是完全自由图生成。系统只在有限智能体类型、固定顺序和预算约束内组合协作图。固定顺序为：
 
 ```text
-planning            ：是否需要规划
-verification        ：是否需要验证
-synthesis           ：是否需要最终合成
-material_grounding  ：是否需要材料依据
-tool_execution      ：是否涉及工具步骤描述
-safety_review       ：是否需要安全审查
-max_nodes           ：最大节点数
-max_edges           ：最大边数
-max_review_loops    ：最大审查循环次数
+规划者
+-> 资料研究者
+-> 工具执行者
+-> 代码编写者/执行者
+-> 测试者
+-> 批判者
+-> 修订者
+-> 安全验证者
+-> 验证者
+-> 合成者
 ```
 
-因此，研究内容 2 不是只做固定规则分支，而是先把任务转换为可解释的量化画像，再生成可验证的拓扑规格，最后由约束生成器落成实际协作图。
+生成器只加入能力需求中需要的节点，但始终保证可执行图至少包含执行节点、验证节点和合成节点。若任务要求“根据给定材料”但没有提供材料，系统会生成阻塞图，不让模型凭空回答。
 
 ### 3. 历史路由记忆与失败率升级机制
 
-入口文件：`src/verifiable_multi_agent/routing_memory.py`
+入口文件：`src/verifiable_multi_agent/memory.py`
 
 核心数据结构：`ProtocolMemory`
 
 每次运行后，系统可以记录：
 
 ```text
-complexity    ：任务分解难度
-verifiability ：结果验证难度
-topology_used ：本次使用的拓扑
-accepted      ：合约验证是否通过
-support_rate  ：证据支撑比例
+任务复杂度
+结果可验证性
+本次使用的宏观拓扑等级
+合约验证是否通过
+证据支持率
 ```
 
-新任务到来时，系统在任务画像的二维空间里查找相似历史任务。如果相似任务失败率较高，就提升拓扑复杂度：
+新任务到来时，系统在任务画像空间中查找相似历史任务。如果相似任务失败率较高，就提高协作复杂度：
 
 ```text
-SINGLE_AGENT -> SUPERVISOR_WORKER -> REVIEW_LOOP
+单执行者级 -> 规划协作级 -> 审查修订级
 ```
 
-这个机制对应毕设中的“根据历史回答复现成功路由，或根据历史失败率提高路由复杂度”。
+## 三类拓扑的含义
 
-## 三种拓扑结构
+三类拓扑在本项目中是**宏观协作等级**，不是固定图模板。实际执行结构以拓扑规格生成出的协作图为准。
 
-### 单智能体拓扑
+### 单执行者级
 
 代码枚举名：`SINGLE_AGENT`
 
-适用任务：简单解释、简短总结、低复杂度且低验证难度任务。
-
-图结构：
+典型结构：
 
 ```text
-Executor -> Verifier -> Synthesizer
+执行者 -> 验证者 -> 合成者
 ```
 
-中文含义：
+适合简单解释、短总结、低复杂度且低验证难度任务。
 
-```text
-执行智能体 -> 验证智能体 -> 合成智能体
-```
-
-节点职责：
-
-```text
-Executor    ：直接生成候选答案
-Verifier    ：做轻量合约验证
-Synthesizer ：合成最终答案
-```
-
-特点：没有规划智能体，避免对简单任务过度拆解。
-
-### 监督者-执行者拓扑
+### 规划协作级
 
 代码枚举名：`SUPERVISOR_WORKER`
 
-适用任务：比较、分析、需要明确维度但风险不高的任务。
-
-图结构：
+典型结构：
 
 ```text
-Planner -> Executor -> Verifier -> Synthesizer
+规划者 -> 执行者 -> 验证者 -> 合成者
 ```
 
-中文含义：
+适合比较、分析、需要明确回答维度或需要材料/工具辅助但风险不高的任务。
 
-```text
-规划智能体 -> 执行智能体 -> 验证智能体 -> 合成智能体
-```
-
-节点职责：
-
-```text
-Planner     ：确定回答维度、比较标准或执行顺序
-Executor    ：按规划生成候选答案
-Verifier    ：检查候选答案是否覆盖规划要求
-Synthesizer ：形成最终答案
-```
-
-示例：`比较 AutoGen 和 LangGraph 的架构差异` 会触发规划、验证、合成能力需求，因此选择 `SUPERVISOR_WORKER`。
-
-### 审查循环拓扑
+### 审查修订级
 
 代码枚举名：`REVIEW_LOOP`
 
-适用任务：验证难度高、风险高、需要审查或修订的任务。
-
-基础图结构：
+典型结构之一：
 
 ```text
-Planner -> Executor -> SafetyVerifier -> Verifier -> Synthesizer
+规划者 -> 执行者 -> 安全验证者 -> 验证者 -> 合成者
 ```
 
-中文含义：
+当任务需要批判、修订、代码测试或高风险安全审查时，实际图中也可能出现：
 
 ```text
-规划智能体 -> 执行智能体 -> 安全验证智能体 -> 验证智能体 -> 合成智能体
+批判者 -> 修订者 -> 验证者
+代码编写者 -> 测试者 -> 修订者 -> 验证者
 ```
 
-当拓扑中包含修订节点，并且验证未通过时，可以进入审查循环：
+## 动态拓扑示例
+
+简单解释任务：
 
 ```text
-... -> Reviser -> Verifier -> ...
+执行者 -> 验证者 -> 合成者
 ```
 
-节点职责：
+结构化比较任务：
 
 ```text
-Planner        ：先定义高风险任务的边界和检查点
-Executor       ：生成初始候选答案
-SafetyVerifier ：检查安全约束
-Verifier       ：检查证据、覆盖度和一致性
-Reviser        ：根据审查意见修订答案
-Synthesizer    ：合成最终答案
+规划者 -> 执行者 -> 验证者 -> 合成者
 ```
 
-特点：比监督者-执行者拓扑更强调验证、审查和必要时的修订。
+材料依赖任务：
+
+```text
+规划者 -> 资料研究者 -> 执行者 -> 验证者 -> 合成者
+```
+
+工具查询任务：
+
+```text
+规划者 -> 工具执行者 -> 执行者 -> 验证者 -> 合成者
+```
+
+代码测试任务：
+
+```text
+规划者 -> 代码编写者 -> 测试者 -> 修订者 -> 验证者 -> 合成者
+```
+
+高风险审查任务：
+
+```text
+规划者 -> 执行者 -> 安全验证者 -> 验证者 -> 合成者
+```
+
+批判修订任务：
+
+```text
+规划者 -> 执行者 -> 批判者 -> 修订者 -> 验证者 -> 合成者
+```
 
 ## 后端
 
@@ -252,7 +237,7 @@ Synthesizer    ：合成最终答案
 | `deepseek` | 云端模型对比主线 |
 | `ollama` | 本地快速运行 |
 
-不保留假后端运行模式。
+不保留假后端运行模式。测试中的假后端只用于单元测试隔离。
 
 ## 运行示例
 
@@ -275,7 +260,7 @@ Ollama：
 vma "解释多智能体协同的优势" --backend ollama --model qwen3.5:4b --router quant
 ```
 
-## 输出运行轨迹
+## 运行轨迹
 
 ```powershell
 vma "task" --backend vllm --router quant --contract-report
@@ -284,16 +269,16 @@ vma "task" --backend vllm --router quant --show-topology
 vma "task" --backend vllm --router quant --save-run
 ```
 
-常见运行轨迹字段：
+常见输出字段：
 
 ```text
-任务画像（Task Profile）
-选择的拓扑（Topology）
-量化路由细节（Quantitative Router）
-生成后的协作图（Generated Topology）
-实际执行过的节点（Graph Execution）
-合约验证报告（Contract Report）
-最终答案（Final Answer）
+任务画像
+选择的宏观拓扑等级
+量化路由细节
+生成后的协作图
+实际执行过的节点
+合约验证报告
+最终答案
 ```
 
 ## 测试

@@ -32,7 +32,7 @@ class LLMAgent:
         user = self._build_user_prompt(task, context, subtask, stage_note)
         try:
             raw = self.backend.complete(system=system, user=user, role=self.role.value)
-            data = json.loads(raw)
+            data = _loads_contract_json(raw)
             return ContractMessage(
                 role=self.role,
                 subtask=subtask or "",
@@ -59,6 +59,8 @@ class LLMAgent:
             synthesis_rule = (
                 "When synthesizing the final answer, do not mention internal orchestration, "
                 "topology, planner, executor, verifier, synthesizer, or trace unless the user asks. "
+                "Produce a substantive final answer, not a one-sentence summary. "
+                "Use the upstream evidence to give clear dimensions, comparisons, caveats, and a conclusion. "
             )
         return (
             f"You are the {self.role.value} agent in a thesis prototype. "
@@ -67,14 +69,14 @@ class LLMAgent:
             "Keep the original task as the only topic. Return only valid JSON."
         )
 
-    @staticmethod
     def _build_user_prompt(
+        self,
         task: str,
         context: list[ContractMessage],
         subtask: str | None,
         stage_note: str | None,
     ) -> str:
-        context_summary = "\n".join(f"[{m.role.value}] {m.claim}" for m in context[-5:])
+        context_summary = "\n".join(_format_context_message(message) for message in context[-6:])
         parts = [
             f"Subtask: {subtask or 'process current graph node'}",
             "",
@@ -89,7 +91,7 @@ class LLMAgent:
                 "",
                 "Output format, strict JSON only:",
                 "{",
-                '  "claim": "one clear claim",',
+                _claim_schema_line(self.role),
                 '  "evidence": ["evidence item 1", "evidence item 2"],',
                 '  "action": "plan|execute|verify|synthesize",',
                 '  "uncertainty": 0.0',
@@ -103,6 +105,64 @@ def _ensure_str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if item is not None]
+
+
+def _loads_contract_json(raw: str) -> dict:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = json.loads(_escape_control_chars_inside_strings(raw))
+    if not isinstance(data, dict):
+        raise TypeError("LLM response JSON must be an object")
+    return data
+
+
+def _escape_control_chars_inside_strings(raw: str) -> str:
+    """Repair common LLM JSON mistakes such as literal newlines in string values."""
+    repaired: list[str] = []
+    in_string = False
+    escaped = False
+    for char in raw:
+        if escaped:
+            repaired.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            repaired.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            repaired.append(char)
+            in_string = not in_string
+            continue
+        if in_string and char == "\n":
+            repaired.append("\\n")
+            continue
+        if in_string and char == "\r":
+            repaired.append("\\r")
+            continue
+        if in_string and char == "\t":
+            repaired.append("\\t")
+            continue
+        repaired.append(char)
+    return "".join(repaired)
+
+
+def _format_context_message(message: ContractMessage) -> str:
+    evidence = "; ".join(message.evidence[:3])
+    if evidence:
+        return f"[{message.role.value}] claim={message.claim}\n  evidence={evidence}"
+    return f"[{message.role.value}] claim={message.claim}"
+
+
+def _claim_schema_line(role: AgentRole) -> str:
+    if role == AgentRole.SYNTHESIZER:
+        return (
+            '  "claim": "complete final answer in Simplified Chinese when the task is Chinese; '
+            'write 3-6 compact paragraphs or bullet points; include key dimensions, supported details, '
+            'and a direct conclusion",'
+        )
+    return '  "claim": "one clear claim",'
 
 
 def _contains_cjk(text: str) -> bool:

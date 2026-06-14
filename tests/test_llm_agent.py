@@ -99,6 +99,29 @@ def test_llm_agent_fallback_on_empty_string() -> None:
     assert msg.uncertainty == 1.0
 
 
+def test_llm_agent_repairs_unescaped_multiline_json_string() -> None:
+    raw = '''{
+  "claim": "可以这样实现：
+```python
+def quick_sort(items):
+    return items
+```
+测试用例覆盖空列表和重复元素。",
+  "evidence": ["用户要求函数和测试用例"],
+  "action": "synthesize",
+  "uncertainty": 0.1
+}'''
+    backend = _fake_backend(raw)
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+
+    msg = agent.run(task="写一个 Python 函数实现快速排序，并给出测试用例", context=[])
+
+    assert "quick_sort" in msg.claim
+    assert "空列表" in msg.claim
+    assert msg.evidence == ["用户要求函数和测试用例"]
+    assert msg.action == "synthesize"
+
+
 def test_llm_agent_fallback_on_missing_fields() -> None:
     """backend 返回合法 JSON 但缺少部分字段时，使用默认值填充。"""
     backend = _fake_backend('{"claim": "only claim"}')
@@ -144,3 +167,26 @@ def test_llm_agent_system_prompt_contains_role() -> None:
     system_prompt = backend.calls[-1]["system"]
     assert "planner" in system_prompt.lower()
     assert "JSON" in system_prompt
+
+
+def test_synthesizer_prompt_requires_substantive_final_answer() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+    context = [
+        ContractMessage(
+            role=AgentRole.EXECUTOR,
+            subtask="draft",
+            claim="AutoGen uses conversation-driven agents; LangGraph uses graph-driven workflow.",
+            evidence=["AutoGen evidence", "LangGraph evidence"],
+            action="draft answer",
+        )
+    ]
+
+    agent.run(task="Compare AutoGen and LangGraph.", context=context, subtask="synthesize")
+
+    system_prompt = backend.calls[-1]["system"]
+    user_prompt = backend.calls[-1]["user"]
+    assert "not a one-sentence summary" in system_prompt
+    assert "3-6 compact paragraphs or bullet points" in user_prompt
+    assert "AutoGen evidence" in user_prompt
+    assert "LangGraph evidence" in user_prompt
