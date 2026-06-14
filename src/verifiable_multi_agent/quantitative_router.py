@@ -212,7 +212,7 @@ class QuantitativeRouter:
 
         _append_signal_reasons(requirements, reasons)
 
-        max_review_loops = 1 if needs.safety_review or needs.critique or needs.revision else 0
+        max_review_loops = 1 if needs.safety_review or needs.critique or needs.revision or needs.code_testing else 0
         max_tool_calls = 3 if needs.tool_execution else 0
         max_nodes = _estimate_node_count(needs)
         max_edges = max(0, max_nodes - 1 + max_review_loops)

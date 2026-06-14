@@ -1,9 +1,4 @@
-"""Research topic 1: structured contract verification.
-
-This module is the readable entry point for the first thesis thread:
-multi-agent communication is recorded as ContractMessage objects, then checked
-by structural and optional semantic verification.
-"""
+"""Compatibility entry point for contract verification."""
 
 from __future__ import annotations
 

@@ -55,16 +55,27 @@ class LLMAgent:
     def _build_system_prompt(self, task: str) -> str:
         language = "Respond entirely in Simplified Chinese. " if _contains_cjk(task) else ""
         synthesis_rule = ""
+        verifier_rule = ""
+        if self.role == AgentRole.VERIFIER:
+            verifier_rule = (
+                'For verifier output, the claim field must start with "APPROVED" or '
+                '"REJECTED: [reason]". If rejecting, name the specific upstream claim '
+                "and the specific evidence item that contradicts it. "
+            )
         if self.role == AgentRole.SYNTHESIZER:
             synthesis_rule = (
                 "When synthesizing the final answer, do not mention internal orchestration, "
                 "topology, planner, executor, verifier, synthesizer, or trace unless the user asks. "
                 "Produce a substantive final answer, not a one-sentence summary. "
                 "Use the upstream evidence to give clear dimensions, comparisons, caveats, and a conclusion. "
+                "If upstream nodes produced concrete deliverables, the final answer must include the complete "
+                "deliverables instead of replacing them with a description. Concrete deliverables include schema, "
+                "SQL, API code, functions, tests, configuration, step-by-step procedures, tables, and checklists. "
             )
         return (
             f"You are the {self.role.value} agent in a thesis prototype. "
             f"{language}"
+            f"{verifier_rule}"
             f"{synthesis_rule}"
             "Keep the original task as the only topic. Return only valid JSON."
         )
@@ -86,12 +97,15 @@ class LLMAgent:
             parts.append(f"Stage note: {stage_note}")
         if context_summary:
             parts.append(f"Recent context:\n{context_summary}")
+        deliverable_instruction = _deliverable_instruction(task, subtask)
+        if deliverable_instruction:
+            parts.append(f"Deliverable requirement: {deliverable_instruction}")
         parts.extend(
             [
                 "",
                 "Output format, strict JSON only:",
                 "{",
-                _claim_schema_line(self.role),
+                _claim_schema_line(self.role, task, subtask),
                 '  "evidence": ["evidence item 1", "evidence item 2"],',
                 '  "action": "plan|execute|verify|synthesize",',
                 '  "uncertainty": 0.0',
@@ -155,14 +169,57 @@ def _format_context_message(message: ContractMessage) -> str:
     return f"[{message.role.value}] claim={message.claim}"
 
 
-def _claim_schema_line(role: AgentRole) -> str:
+def _deliverable_instruction(task: str, subtask: str | None) -> str:
+    text = f"{task} {subtask or ''}".lower()
+    instructions: list[str] = []
+    if _contains_any_word(text, ("prove", "proof", "derive", "derivation", "\u8bc1\u660e", "\u63a8\u5bfc")):
+        instructions.append(
+            "Return the complete proof or derivation with assumptions, steps, and conclusion; do not only describe that a proof was provided."
+        )
+    if _contains_any_word(text, ("implement", "write code", "function", "api", "\u5b9e\u73b0", "\u5199", "\u51fd\u6570", "\u63a5\u53e3")):
+        instructions.append(
+            "Return the complete implementation as fenced code blocks; do not replace code with prose."
+        )
+    if _contains_any_word(text, ("schema", "database", "table", "\u6570\u636e\u5e93", "\u8868", "\u8bbe\u8ba1")):
+        instructions.append(
+            "Return the complete schema, preferably as SQL DDL or an explicit table/field/constraint list."
+        )
+    if _contains_any_word(text, ("test", "pytest", "unit test", "\u6d4b\u8bd5", "\u7528\u4f8b", "\u9a8c\u8bc1")):
+        instructions.append(
+            "Return concrete test cases with assertions; do not only say that tests were written."
+        )
+    if _contains_any_word(text, ("list", "table", "checklist", "plan", "\u5217\u51fa", "\u8868\u683c", "\u6e05\u5355", "\u8ba1\u5212")):
+        instructions.append(
+            "Return the requested table, list, checklist, or plan as the actual deliverable, not a summary that it exists."
+        )
+    return " ".join(instructions)
+
+
+def _claim_schema_line(role: AgentRole, task: str = "", subtask: str | None = None) -> str:
+    deliverable_instruction = _deliverable_instruction(task, subtask)
+    if role == AgentRole.VERIFIER:
+        return (
+            '  "claim": "APPROVED if all checked claims are supported; or '
+            'REJECTED: [reason] with the exact conflicting claim and evidence item",'
+        )
     if role == AgentRole.SYNTHESIZER:
         return (
             '  "claim": "complete final answer in Simplified Chinese when the task is Chinese; '
             'write 3-6 compact paragraphs or bullet points; include key dimensions, supported details, '
-            'and a direct conclusion",'
+            'and a direct conclusion; preserve complete upstream deliverables such as schema, SQL, API code, '
+            'functions, tests, configuration, procedures, tables, or checklists",'
+        )
+    if deliverable_instruction:
+        return (
+            '  "claim": "complete concrete deliverable requested by the task, such as proof steps, derivation, '
+            'schema, SQL, API implementation, functions, tests, tables, checklists, or plans; '
+            'do not replace deliverables with prose about having done them",'
         )
     return '  "claim": "one clear claim",'
+
+
+def _contains_any_word(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
 
 
 def _contains_cjk(text: str) -> bool:

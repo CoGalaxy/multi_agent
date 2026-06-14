@@ -9,6 +9,7 @@ class ContractReport(BaseModel):
     total_messages: int
     supported_claims: int
     support_rate: float
+    task_coverage: float | None = None
     evidence_coverage: float
     action_completeness: float
     violations: list[str] = Field(default_factory=list)
@@ -23,6 +24,7 @@ def build_contract_report(trace: AgentTrace) -> ContractReport:
             total_messages=0,
             supported_claims=0,
             support_rate=0.0,
+            task_coverage=trace.verification.task_coverage if trace.verification else None,
             evidence_coverage=0.0,
             action_completeness=0.0,
             violations=violations,
@@ -42,7 +44,8 @@ def build_contract_report(trace: AgentTrace) -> ContractReport:
     return ContractReport(
         total_messages=total,
         supported_claims=supported,
-        support_rate=round(supported / total, 3),
+        support_rate=trace.verification.support_rate if trace.verification else round(supported / total, 3),
+        task_coverage=trace.verification.task_coverage if trace.verification else None,
         evidence_coverage=round(with_evidence / total, 3),
         action_completeness=round(with_action / total, 3),
         violations=violations,
@@ -95,6 +98,7 @@ def format_contract_report(trace: AgentTrace) -> str:
             f"messages={report.total_messages}",
             f"supported_claims={report.supported_claims}",
             f"support_rate={report.support_rate:.2f}",
+            f"task_coverage={report.task_coverage:.2f}" if report.task_coverage is not None else "task_coverage=N/A",
             f"evidence_coverage={report.evidence_coverage:.2f}",
             f"action_completeness={report.action_completeness:.2f}",
             f"accepted={accepted}",

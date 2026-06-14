@@ -114,6 +114,7 @@ class VerificationResult(BaseModel):
 
     accepted: bool
     support_rate: float
+    task_coverage: float | None = None
     violations: list[str] = Field(default_factory=list)
     next_action: str = "accept"
 

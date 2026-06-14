@@ -169,6 +169,18 @@ def test_llm_agent_system_prompt_contains_role() -> None:
     assert "JSON" in system_prompt
 
 
+def test_verifier_prompt_requires_approved_or_rejected_claim() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.VERIFIER, backend=backend)
+    agent.run(task="verify result", context=[])
+
+    system_prompt = backend.calls[-1]["system"]
+    user_prompt = backend.calls[-1]["user"]
+    assert "APPROVED" in system_prompt
+    assert "REJECTED: [reason]" in system_prompt
+    assert "conflicting claim and evidence item" in user_prompt
+
+
 def test_synthesizer_prompt_requires_substantive_final_answer() -> None:
     backend = _fake_backend(_valid_json_response())
     agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
@@ -190,3 +202,52 @@ def test_synthesizer_prompt_requires_substantive_final_answer() -> None:
     assert "3-6 compact paragraphs or bullet points" in user_prompt
     assert "AutoGen evidence" in user_prompt
     assert "LangGraph evidence" in user_prompt
+
+
+def test_synthesizer_prompt_preserves_complete_deliverables() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+    context = [
+        ContractMessage(
+            role=AgentRole.EXECUTOR,
+            subtask="draft deliverable",
+            claim="CREATE TABLE users (id INTEGER PRIMARY KEY);",
+            evidence=["POST /register implementation and pytest tests were drafted"],
+            action="draft schema api tests",
+        )
+    ]
+
+    agent.run(task="设计 schema，写接口和测试", context=context, subtask="synthesize")
+
+    system_prompt = backend.calls[-1]["system"]
+    user_prompt = backend.calls[-1]["user"]
+    assert "complete deliverables" in system_prompt
+    assert "instead of replacing them with a description" in system_prompt
+    assert "schema, SQL, API code" in system_prompt
+    assert "preserve complete upstream deliverables" in user_prompt
+
+
+def test_coder_prompt_requires_complete_code_deliverable() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.EXECUTOR, backend=backend)
+    agent.run(
+        task="写一个 Python 函数实现快速排序，并给出测试用例",
+        context=[],
+        subtask="Implement candidate code",
+        action="Return the complete implementation as code.",
+    )
+
+    user_prompt = backend.calls[-1]["user"]
+    assert "complete implementation as fenced code blocks" in user_prompt
+    assert "concrete test cases with assertions" in user_prompt
+    assert "do not replace deliverables with prose" in user_prompt
+
+
+def test_prompt_supports_proof_as_deliverable() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.EXECUTOR, backend=backend)
+    agent.run(task="证明两个偶数之和仍然是偶数", context=[], subtask="Produce proof")
+
+    user_prompt = backend.calls[-1]["user"]
+    assert "complete proof or derivation" in user_prompt
+    assert "assumptions, steps, and conclusion" in user_prompt

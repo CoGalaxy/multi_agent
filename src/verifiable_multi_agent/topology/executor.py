@@ -74,14 +74,22 @@ class GraphExecutor:
             trace.execution_summary.append(f"{node.type.value}: {node.label or node.type.value}")
             trace.metadata["graph_execution"]["executed_nodes"].append(node.type.value)
 
-        trace.verification = verify_contracts(trace.messages)
+        trace.verification = verify_contracts(trace.messages, task=task)
         trace = self._maybe_run_review_loop(task, graph, trace)
         trace.final_answer = _final_answer(trace.messages) or task
         return trace
 
-    def _run_node(self, task: str, node: AgentNode, context: list[ContractMessage]) -> ContractMessage:
+    def _run_node(
+        self,
+        task: str,
+        node: AgentNode,
+        context: list[ContractMessage],
+        extra_stage_note: str | None = None,
+    ) -> ContractMessage:
         role = _role_for_node(node.type)
         stage_note = f"Graph node={node.type.value}; config={node.config}"
+        if extra_stage_note:
+            stage_note = f"{stage_note}\n{extra_stage_note}"
 
         if node.type == AgentType.RESEARCHER and self.retriever and self.retriever.available:
             hits = self.retriever.search(task)
@@ -139,14 +147,21 @@ class GraphExecutor:
 
         loops_used = 0
         while loops_used < graph.constraints.max_review_loops and trace.verification and not trace.verification.accepted:
+            review_note = _review_repair_note(trace.verification.violations)
             reviser = AgentNode(id=f"reviser_loop_{loops_used + 1}", type=AgentType.REVISER, label="Reviser")
             verifier = AgentNode(id=f"verifier_loop_{loops_used + 1}", type=AgentType.VERIFIER, label="Verifier")
             for node in (reviser, verifier):
-                trace.messages.append(self._run_node(task, node, trace.messages))
+                extra_note = review_note if node.type == AgentType.REVISER else None
+                trace.messages.append(self._run_node(task, node, trace.messages, extra_stage_note=extra_note))
                 trace.metadata["graph_execution"]["executed_nodes"].append(node.type.value)
             loops_used += 1
             trace.metadata["graph_execution"]["review_loops_used"] = loops_used
-            trace.verification = verify_contracts(trace.messages)
+            trace.verification = verify_contracts(trace.messages, task=task)
+        if loops_used > 0 and any(node.type == AgentType.SYNTHESIZER for node in graph.nodes):
+            synthesizer = AgentNode(id=f"synthesizer_loop_{loops_used}", type=AgentType.SYNTHESIZER, label="Synthesizer")
+            trace.messages.append(self._run_node(task, synthesizer, trace.messages))
+            trace.metadata["graph_execution"]["executed_nodes"].append(synthesizer.type.value)
+            trace.verification = verify_contracts(trace.messages, task=task)
         return trace
 
     def _make_agent(self, role: AgentRole) -> LLMAgent:
@@ -156,7 +171,7 @@ class GraphExecutor:
 def _role_for_node(node_type: AgentType) -> AgentRole:
     if node_type == AgentType.PLANNER:
         return AgentRole.PLANNER
-    if node_type in {AgentType.VERIFIER, AgentType.SAFETY_VERIFIER, AgentType.TESTER}:
+    if node_type in {AgentType.VERIFIER, AgentType.SAFETY_VERIFIER}:
         return AgentRole.VERIFIER
     if node_type == AgentType.SYNTHESIZER:
         return AgentRole.SYNTHESIZER
@@ -185,8 +200,8 @@ def _action_for_node(node_type: AgentType) -> str:
         AgentType.RESEARCHER: "Ground the answer in provided material or note missing material.",
         AgentType.TOOL_EXECUTOR: "Describe the tool requirement without invoking an external connector.",
         AgentType.EXECUTOR: "Draft the answer using upstream messages.",
-        AgentType.CODER: "Draft implementation-oriented output.",
-        AgentType.TESTER: "Check the candidate output with deterministic test reasoning.",
+        AgentType.CODER: "Return the complete implementation as code, not a prose description.",
+        AgentType.TESTER: "Return concrete test cases with assertions for the candidate implementation.",
         AgentType.CRITIC: "Identify gaps before revision.",
         AgentType.REVISER: "Revise using critique or verifier concerns.",
         AgentType.SAFETY_VERIFIER: "Check safety and policy-sensitive constraints.",
@@ -200,3 +215,15 @@ def _final_answer(messages: list[ContractMessage]) -> str | None:
         if message.metadata.get("node_type") == AgentType.SYNTHESIZER.value:
             return message.claim
     return messages[-1].claim if messages else None
+
+
+def _review_repair_note(violations: list[str]) -> str:
+    if not violations:
+        return "Review repair requirement: revise the answer by addressing the verifier's concerns one by one."
+    listed = "\n".join(f"- {violation}" for violation in violations)
+    return (
+        "Review repair requirement: the previous contract verification failed. "
+        "Revise the concrete answer by addressing every listed issue one by one. "
+        "Do not merely say that the issue was fixed; include the corrected deliverable.\n"
+        f"{listed}"
+    )

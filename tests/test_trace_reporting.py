@@ -102,12 +102,28 @@ def test_empty_evidence_lowers_support_rate() -> None:
     trace = _sample_trace()
     for message in trace.messages:
         message.evidence = []
+    trace.verification.support_rate = 0.0
 
     report = build_contract_report(trace)
 
     assert report.supported_claims == 0
     assert report.support_rate == 0.0
     assert report.evidence_coverage == 0.0
+
+
+def test_contract_report_uses_verification_support_rate() -> None:
+    trace = _sample_trace()
+    trace.verification = VerificationResult(
+        accepted=False,
+        support_rate=0.25,
+        violations=["verifier_rejected:test"],
+        next_action="escalate",
+    )
+
+    report = build_contract_report(trace)
+
+    assert report.supported_claims == 3
+    assert report.support_rate == 0.25
 
 
 def test_contract_report_format_matches_human_readable_sections() -> None:

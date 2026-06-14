@@ -105,6 +105,7 @@ def test_code_testing_task_maps_to_code_capabilities() -> None:
     assert spec.capability_needs.code_testing
     assert spec.capability_needs.verification
     assert spec.max_nodes >= 6
+    assert spec.max_review_loops == 1
     assert "signal=code_testing" in spec.generation_reasons
 
 

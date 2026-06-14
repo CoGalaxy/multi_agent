@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import typer
@@ -74,18 +75,19 @@ def solve(
     saved_path = save_run_trace(run_trace) if save_run else None
 
     if json_trace:
-        typer.echo(run_trace_json(run_trace))
+        _write_utf8(run_trace_json(run_trace) + "\n")
         return
 
     if contract_report:
         if show_topology:
             _print_generated_topology(trace)
-        console.print(format_contract_report(trace))
+        console.print(format_contract_report(trace), markup=False)
         if saved_path:
             console.print(f"\nSaved run: {saved_path}")
         return
 
-    console.print(f"[bold]Answer:[/bold] {trace.final_answer}")
+    console.print("[bold]Answer:[/bold]")
+    console.print(trace.final_answer or "", markup=False)
     if saved_path:
         console.print(f"[bold]Saved run:[/bold] {saved_path}")
     if hide_trace:
@@ -141,6 +143,11 @@ def _build_backend(
             None,
         )
     raise typer.BadParameter("backend must be one of: ollama, vllm, deepseek.")
+
+
+def _write_utf8(text: str) -> None:
+    """Write machine-readable output without Windows console encoding loss."""
+    sys.stdout.buffer.write(text.encode("utf-8"))
 
 
 def _print_quant_router(topology_spec: dict) -> None:
