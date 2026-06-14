@@ -17,3 +17,6 @@ runs/
 logs/
 pid/
 .codex-ppt-midterm-defense/
+data/
+AGENTS.md
+slides/
