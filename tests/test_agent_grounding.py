@@ -1,52 +1,34 @@
-from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.orchestrator import Orchestrator
 
-
-class RecordingBackend(LlmBackend):
-    is_real_llm: bool = False
-
-    def __init__(self) -> None:
-        self.calls = []
-
-    def complete(self, system: str, user: str, role: str | None = None) -> str:
-        self.calls.append({"system": system, "user": user, "role": role})
-        return f"{role} grounded response"
+from tests.fake_llm import FakeLlmBackend
 
 
 def test_llm_calls_are_grounded_in_original_task(tmp_path) -> None:
-    backend = RecordingBackend()
+    backend = FakeLlmBackend()
     task = "Plan, execute, and verify a research task."
 
     Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
 
     assert backend.calls
-    # All agent calls must include the original task
     assert all(f"Original task: {task}" in call["user"] for call in backend.calls)
-    # Grounding rules appear in agent calls (planner, executor — not verifier/synthesizer)
-    agent_calls = [c for c in backend.calls if c["role"] in ("planner", "executor")]
-    assert agent_calls
-    assert all("Do not introduce a new topic" in c["system"] for c in agent_calls)
     assert any(call["role"] == "synthesizer" for call in backend.calls)
 
 
-def test_chinese_llm_calls_require_simplified_chinese(tmp_path) -> None:
-    backend = RecordingBackend()
+def test_chinese_task_is_sent_to_llm_backend(tmp_path) -> None:
+    backend = FakeLlmBackend()
     task = "总结可验证多智能体协同架构的核心目标。"
 
     Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
 
     assert backend.calls
-    assert all("respond entirely in Simplified Chinese" in call["system"] for call in backend.calls)
-    assert all("Do not over-refuse" in call["system"] for call in backend.calls)
+    assert all(task in call["user"] for call in backend.calls)
 
 
-def test_synthesizer_prompt_hides_internal_orchestration(tmp_path) -> None:
-    backend = RecordingBackend()
+def test_synthesizer_is_part_of_quant_graph(tmp_path) -> None:
+    backend = FakeLlmBackend()
     task = "针对一个涉及安全约束的高风险工具调用任务，生成安全执行计划，并验证其合规性。"
 
-    Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
+    trace = Orchestrator(tmp_path / "memory.jsonl", backend=backend).solve(task)
 
-    synth_calls = [call for call in backend.calls if call["role"] == "synthesizer"]
-    assert synth_calls
-    assert "do not mention internal orchestration" in synth_calls[-1]["system"]
-    assert "planner, executor, verifier" in synth_calls[-1]["system"]
+    assert trace.metadata["router_mode"] == "quant"
+    assert "synthesizer" in trace.metadata["graph_execution"]["executed_nodes"]

@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from verifiable_multi_agent.backends import OllamaBackend
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
-from verifiable_multi_agent.router import select_topology
+from verifiable_multi_agent.quantitative_router import QuantitativeRouter, infer_input_requirements, topology_from_spec
 
 # ─── config ──────────────────────────────────────────────────
 BENCHMARK_FILE = Path(__file__).resolve().parent.parent / "data" / "benchmark_tasks.json"
@@ -52,7 +52,8 @@ def run_profiler(name: str, profiler_fn, tasks: list[dict], verbose: bool = True
         t0 = time.perf_counter()
         profile = profiler_fn(task)
         elapsed = time.perf_counter() - t0
-        topology = select_topology(profile).value
+        spec = QuantitativeRouter().route(profile, infer_input_requirements(task))
+        topology = topology_from_spec(spec).value
         results.append({
             "task": task,
             "profile": profile,

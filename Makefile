@@ -3,7 +3,6 @@
 #
 # Usage:
 #   make run TASK="..."     用 Ollama + Qwen3.5:4b 运行任务（默认）
-#   make run-mock TASK="..." mock 模式（零依赖验证管线）
 #   make test                测试 LLM 是否正常响应
 #   make test-unit           运行单元测试
 #   make benchmark            运行 profiler 对比基准测试 (100 tasks)
@@ -35,11 +34,6 @@ install-dev:
 run:
 	$(call _ensure_task)
 	$(call _conda, vma "$(TASK)" --backend ollama --model "$(OLLAMA_MODEL)")
-
-.PHONY: run-mock
-run-mock:
-	$(call _ensure_task)
-	$(call _conda, vma "$(TASK)" --backend mock)
 
 .PHONY: run-vllm
 run-vllm:

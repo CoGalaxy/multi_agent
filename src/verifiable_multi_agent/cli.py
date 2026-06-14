@@ -1,13 +1,4 @@
-"""
-命令行入口 — 框架的统一启动点。
-
-使用方式：
-  vma "task description"                             # Ollama + Qwen3.5:4b（默认）
-  vma "task" --backend mock                          # mock 模式，零依赖
-  vma "task" --backend ollama --model qwen3.5:4b     # Ollama 本地推理
-  vma "task" --backend vllm --model Qwen2.5-7B       # vLLM 本地推理
-  vma "task" --backend deepseek --model ...          # 云端 API（过渡期）
-"""
+"""Command line entry for the quant-only thesis prototype."""
 
 from __future__ import annotations
 
@@ -20,18 +11,18 @@ from rich.console import Console
 from rich.table import Table
 
 from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend, OpenAICompatibleBackend
-from verifiable_multi_agent.memory import ProtocolMemory
 from verifiable_multi_agent.orchestrator import Orchestrator
 from verifiable_multi_agent.profiler import LlmProfiler
 from verifiable_multi_agent.reporting import format_contract_report
+from verifiable_multi_agent.routing_memory import ProtocolMemory
 from verifiable_multi_agent.trace import build_run_trace, run_trace_json, save_run_trace
 
-app = typer.Typer(help="Run the verifiable multi-agent research scaffold.")
+app = typer.Typer(help="Run the quant-only verifiable multi-agent prototype.")
 console = Console(no_color=True)
 
 
 def load_env_file(path: Path = Path(".env")) -> None:
-    """加载 .env 文件到环境变量，支持 ${VAR} 引用已有环境变量。"""
+    """Load KEY=VALUE pairs from .env without overwriting existing env vars."""
     if not path.exists():
         return
     for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -48,59 +39,36 @@ def load_env_file(path: Path = Path(".env")) -> None:
 
 @app.command()
 def solve(
-    task: str = typer.Argument(..., help="Task for the multi-agent scaffold."),
+    task: str = typer.Argument(..., help="Task for the multi-agent prototype."),
     memory: Path = typer.Option(Path("data/protocol_memory.jsonl"), help="Protocol memory JSONL path."),
-    backend: str = typer.Option("ollama", help="Backend: mock, ollama, vllm, or deepseek."),
-    base_url: str = typer.Option("http://127.0.0.1:8000/v1", help="OpenAI-compatible base URL."),
-    model: str = typer.Option("local-model", help="Model name for vLLM or DeepSeek."),
-    profile_model: str | None = typer.Option(None, help="Small model for LLM-based task profiling (default: qwen3.5:0.8b for ollama)."),
-    judge_model: str | None = typer.Option(None, help="Optional stronger model for verifier/synthesizer."),
+    backend: str = typer.Option("ollama", help="Backend: ollama, vllm, or deepseek."),
+    base_url: str = typer.Option("http://127.0.0.1:8000/v1", help="OpenAI-compatible base URL for vLLM."),
+    model: str = typer.Option("local-model", help="Model name for vLLM, Ollama, or DeepSeek."),
+    profile_model: str | None = typer.Option(None, help="Small Ollama model for task profiling."),
+    judge_model: str | None = typer.Option(None, help="Optional DeepSeek judge model for verifier/synthesizer."),
     api_key: str | None = typer.Option(None, help="API key. Defaults to DEEPSEEK_API_KEY for DeepSeek."),
-    hide_trace: bool = typer.Option(False, help="Hide internal topology, execution summary, and contract trace."),
+    hide_trace: bool = typer.Option(False, help="Hide debug trace in default text output."),
     json_trace: bool = typer.Option(False, "--json-trace", help="Output the complete run trace as JSON."),
     contract_report: bool = typer.Option(False, "--contract-report", help="Output a human-readable contract report."),
     save_run: bool = typer.Option(False, "--save-run", help="Save runs/{run_id}/trace.json."),
-    router: str = typer.Option("legacy", "--router", help="Router mode: legacy, rule, or quant."),
-    show_topology: bool = typer.Option(False, "--show-topology", help="Show generated graph topology when available."),
+    router: str = typer.Option("quant", "--router", help="Router mode: quant."),
+    show_topology: bool = typer.Option(False, "--show-topology", help="Show generated graph topology."),
     rag_corpus: Path = typer.Option(Path("data/rag_corpus.jsonl"), "--rag-corpus", help="Local JSONL corpus for RAG evidence retrieval."),
-    routing_memory: bool = typer.Option(True, "--routing-memory/--no-routing-memory", help="Enable routing decision memory for topology correction."),
+    routing_memory: bool = typer.Option(True, "--routing-memory/--no-routing-memory", help="Enable route memory correction."),
 ) -> None:
     load_env_file()
-    llm = None
-    profiler = None
-    if backend == "ollama":
-        ollama_model = model if model != "local-model" else "qwen3.5:4b"
-        llm = OllamaBackend(model=ollama_model)
-        # 用独立的小模型做任务画像，0.8b 足够准确且极快
-        profiler_model_name = profile_model or "qwen3.5:0.8b"
-        profiler = LlmProfiler(OllamaBackend(model=profiler_model_name))
-    elif backend == "vllm":
-        llm = OpenAICompatibleBackend(base_url=base_url, model=model)
-    elif backend == "deepseek":
-        key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        if not key:
-            raise typer.BadParameter("DeepSeek backend requires --api-key or DEEPSEEK_API_KEY.")
-        deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-        deepseek_model = model if model != "local-model" else os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
-        deepseek_judge_model = judge_model or os.getenv("DEEPSEEK_JUDGE_MODEL")
-        llm = DeepSeekBackend(
-            api_key=key,
-            model=deepseek_model,
-            judge_model=deepseek_judge_model,
-            base_url=deepseek_base_url,
-        )
-    elif backend != "mock":
-        raise typer.BadParameter("backend must be one of: mock, ollama, vllm, deepseek.")
-    if router not in {"legacy", "rule", "quant"}:
-        raise typer.BadParameter("router must be one of: legacy, rule, quant.")
-    _routing_memory = ProtocolMemory("runs/memory.json") if routing_memory else None
+    if router != "quant":
+        raise typer.BadParameter("only quant router is kept in the thesis main line.")
+
+    llm, profiler = _build_backend(backend, base_url, model, profile_model, judge_model, api_key)
+    route_memory = ProtocolMemory("runs/memory.json") if routing_memory else None
     trace = Orchestrator(
         memory_path=memory,
         backend=llm,
         profiler=profiler,
-        router_mode=router,
+        router_mode="quant",
         rag_corpus_path=rag_corpus,
-        routing_memory=_routing_memory,
+        routing_memory=route_memory,
     ).solve(task)
     run_trace = build_run_trace(trace)
     saved_path = save_run_trace(run_trace) if save_run else None
@@ -117,19 +85,17 @@ def solve(
             console.print(f"\nSaved run: {saved_path}")
         return
 
-    zh = _contains_cjk(task)
-    labels = _labels(zh)
-    console.print(f"[bold]{labels['answer']}:[/bold] {trace.final_answer}")
+    console.print(f"[bold]Answer:[/bold] {trace.final_answer}")
     if saved_path:
         console.print(f"[bold]Saved run:[/bold] {saved_path}")
     if hide_trace:
         return
 
-    console.rule(labels["debug_trace"])
-    console.print(f"[bold]{labels['topology']}:[/bold] {trace.topology.value}")
-    console.print(f"[bold]{labels['topology_reason']}:[/bold] {trace.topology_reason}")
+    console.rule("Debug Trace")
+    console.print(f"[bold]Topology:[/bold] {trace.topology.value}")
+    console.print(f"[bold]Topology reason:[/bold] {trace.topology_reason}")
     console.print(
-        f"[bold]{labels['complexity']}:[/bold] "
+        "[bold]TaskProfile:[/bold] "
         f"complexity={trace.profile.complexity:.2f}, "
         f"verifiability={trace.profile.verifiability:.2f}"
     )
@@ -137,20 +103,44 @@ def solve(
         _print_generated_topology(trace)
     if trace.metadata.get("topology_spec"):
         _print_quant_router(trace.metadata["topology_spec"])
-    console.print(f"[bold]{labels['accepted']}:[/bold] {trace.verification.accepted if trace.verification else False}")
-    console.print(f"[bold]{labels['execution_summary']}:[/bold]")
+    console.print(f"[bold]Accepted:[/bold] {trace.verification.accepted if trace.verification else False}")
+    console.print("[bold]Execution summary:[/bold]")
     for item in trace.execution_summary:
         console.print(f"- {item}")
+    _print_contract_table(trace.messages)
 
-    table = Table(title=labels["contract_trace"], box=box.ASCII)
-    table.add_column(labels["role"])
-    table.add_column(labels["subtask"])
-    table.add_column(labels["support"])
-    table.add_column(labels["action"])
-    for message in trace.messages:
-        support = "是" if zh and message.has_support else "否" if zh else "yes" if message.has_support else "no"
-        table.add_row(message.role.value, message.subtask, support, message.action)
-    console.print(table)
+
+def _build_backend(
+    backend: str,
+    base_url: str,
+    model: str,
+    profile_model: str | None,
+    judge_model: str | None,
+    api_key: str | None,
+):
+    if backend == "ollama":
+        ollama_model = model if model != "local-model" else "qwen3.5:4b"
+        llm = OllamaBackend(model=ollama_model)
+        profiler = LlmProfiler(OllamaBackend(model=profile_model or "qwen3.5:0.8b"))
+        return llm, profiler
+    if backend == "vllm":
+        return OpenAICompatibleBackend(base_url=base_url, model=model), None
+    if backend == "deepseek":
+        key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        if not key:
+            raise typer.BadParameter("DeepSeek backend requires --api-key or DEEPSEEK_API_KEY.")
+        deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+        deepseek_model = model if model != "local-model" else os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+        return (
+            DeepSeekBackend(
+                api_key=key,
+                model=deepseek_model,
+                judge_model=judge_model or os.getenv("DEEPSEEK_JUDGE_MODEL"),
+                base_url=deepseek_base_url,
+            ),
+            None,
+        )
+    raise typer.BadParameter("backend must be one of: ollama, vllm, deepseek.")
 
 
 def _print_quant_router(topology_spec: dict) -> None:
@@ -173,7 +163,7 @@ def _print_generated_topology(trace) -> None:
         return
     console.print("[bold][Generated Topology][/bold]")
     node_labels = [node["label"] or node["type"] for node in generated.get("nodes", [])]
-    console.print(" → ".join(node_labels) if node_labels else "(blocked)")
+    console.print(" -> ".join(node_labels) if node_labels else "(blocked)")
     console.print(f"blocked={generated.get('blocked')}")
     if generated.get("block_reason"):
         console.print(f"block_reason={generated.get('block_reason')}")
@@ -186,40 +176,21 @@ def _print_generated_topology(trace) -> None:
         console.print(f"review_loops_used={execution.get('review_loops_used', 0)}")
         console.print(f"execution_mode={execution.get('execution_mode')}")
 
-def _contains_cjk(text: str) -> bool:
-    return any("\u4e00" <= char <= "\u9fff" for char in text)
 
-
-def _labels(zh: bool) -> dict[str, str]:
-    if not zh:
-        return {
-            "topology": "Topology",
-            "topology_reason": "Topology reason",
-            "complexity": "Complexity",
-            "accepted": "Accepted",
-            "answer": "Answer",
-            "execution_summary": "Execution summary",
-            "contract_trace": "Contract Trace",
-            "role": "Role",
-            "subtask": "Subtask",
-            "support": "Support",
-            "action": "Action",
-            "debug_trace": "Debug Trace",
-        }
-    return {
-        "topology": "拓扑",
-        "topology_reason": "拓扑原因",
-        "complexity": "复杂度",
-        "accepted": "验证通过",
-        "answer": "答案",
-        "execution_summary": "执行摘要",
-        "contract_trace": "合约轨迹",
-        "role": "角色",
-        "subtask": "子任务",
-        "support": "支撑",
-        "action": "动作",
-        "debug_trace": "调试轨迹",
-    }
+def _print_contract_table(messages) -> None:
+    table = Table(title="Contract Trace", box=box.ASCII)
+    table.add_column("Role")
+    table.add_column("Subtask")
+    table.add_column("Support")
+    table.add_column("Action")
+    for message in messages:
+        table.add_row(
+            message.role.value,
+            message.subtask,
+            "yes" if message.has_support else "no",
+            message.action,
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

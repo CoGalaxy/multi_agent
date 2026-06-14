@@ -1,5 +1,6 @@
 from typer.testing import CliRunner
 
+import verifiable_multi_agent.cli as cli_module
 from verifiable_multi_agent.cli import app
 from verifiable_multi_agent.profiler import profile_task
 from verifiable_multi_agent.quantitative_router import (
@@ -9,6 +10,8 @@ from verifiable_multi_agent.quantitative_router import (
 )
 from verifiable_multi_agent.routing_spec import CapabilityNeeds, TaskType, TopologySpec
 from verifiable_multi_agent.contracts import Topology
+
+from tests.fake_llm import FakeLlmBackend
 
 
 def _spec(task: str):
@@ -79,14 +82,19 @@ def test_high_risk_task_needs_safety_review() -> None:
     assert spec.max_review_loops >= 1
 
 
-def test_cli_quant_router_shows_profile_and_capability_needs(tmp_path) -> None:
+def _patch_backend(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_build_backend", lambda *args, **kwargs: (FakeLlmBackend(), None))
+
+
+def test_cli_quant_router_shows_profile_and_capability_needs(tmp_path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",
@@ -119,7 +127,8 @@ def test_topology_from_safety_review_spec_maps_to_review_loop() -> None:
     assert topology_from_spec(spec) == Topology.REVIEW_LOOP
 
 
-def test_cli_quant_comparison_task_routes_by_matrix(tmp_path) -> None:
+def test_cli_quant_comparison_task_routes_by_capability_needs(tmp_path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     """规则画像得分低时矩阵路由到 SINGLE_AGENT（LLM 画像会更准确）。"""
     runner = CliRunner()
     result = runner.invoke(
@@ -127,7 +136,7 @@ def test_cli_quant_comparison_task_routes_by_matrix(tmp_path) -> None:
         [
             "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",
@@ -138,18 +147,19 @@ def test_cli_quant_comparison_task_routes_by_matrix(tmp_path) -> None:
 
     assert result.exit_code == 0
     # 规则画像: complexity≈0.33, verifiability≈0.33 → both < 0.4 → SINGLE_AGENT
-    assert "selected=SINGLE_AGENT" in result.stdout
-    assert "QuantRouter selected single_agent" in result.stdout
+    assert "selected=SUPERVISOR_WORKER" in result.stdout
+    assert "QuantRouter selected supervisor_worker" in result.stdout
 
 
-def test_cli_quant_simple_explanation_stays_single_agent(tmp_path) -> None:
+def test_cli_quant_simple_explanation_stays_single_agent(tmp_path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "用三句话解释什么是二分查找。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",
@@ -162,14 +172,15 @@ def test_cli_quant_simple_explanation_stays_single_agent(tmp_path) -> None:
     assert "selected=SINGLE_AGENT" in result.stdout
 
 
-def test_cli_quant_missing_material_blocks_normal_execution(tmp_path) -> None:
+def test_cli_quant_missing_material_blocks_normal_execution(tmp_path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "请根据给定材料比较 AutoGen 和 CAMEL，并验证比较标准。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",

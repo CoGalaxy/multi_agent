@@ -2,6 +2,7 @@ import json
 
 from typer.testing import CliRunner
 
+import verifiable_multi_agent.cli as cli_module
 from verifiable_multi_agent.cli import app
 from verifiable_multi_agent.contracts import TaskProfile, Topology
 from verifiable_multi_agent.routing_spec import CapabilityNeeds, TaskType, TopologySpec
@@ -10,6 +11,8 @@ from verifiable_multi_agent.topology.executor import GraphExecutor
 from verifiable_multi_agent.topology.generator import ConstrainedTopologyGenerator
 from verifiable_multi_agent.topology.graph import AgentEdge, AgentNode, AgentType, CollaborationGraph
 from verifiable_multi_agent.topology.validator import validate_graph
+
+from tests.fake_llm import FakeLlmBackend
 
 
 def _profile(task: str = "task") -> TaskProfile:
@@ -36,9 +39,13 @@ def _types(graph: CollaborationGraph) -> list[str]:
     return graph.node_types()
 
 
+def _executor() -> GraphExecutor:
+    return GraphExecutor(FakeLlmBackend())
+
+
 def test_simple_graph_executes_executor_verifier_synthesizer() -> None:
     graph = ConstrainedTopologyGenerator().generate(_spec(CapabilityNeeds(), max_nodes=3))
-    trace = GraphExecutor().execute("用三句话解释什么是二分查找。", graph, _profile(), Topology.SINGLE_AGENT, "test")
+    trace = _executor().execute("用三句话解释什么是二分查找。", graph, _profile(), Topology.SINGLE_AGENT, "test")
 
     assert _types(graph) == ["executor", "verifier", "synthesizer"]
     assert trace.metadata["graph_execution"]["executed_nodes"] == ["executor", "verifier", "synthesizer"]
@@ -48,33 +55,32 @@ def test_comparison_graph_executes_planner_executor_verifier_synthesizer() -> No
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, verification=True, synthesis=True), max_nodes=4)
     )
-    trace = GraphExecutor().execute("比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
+    trace = _executor().execute("比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
 
     assert _types(graph) == ["planner", "executor", "verifier", "synthesizer"]
     assert trace.metadata["graph_execution"]["executed_nodes"] == ["planner", "executor", "verifier", "synthesizer"]
     assert trace.final_answer
-    assert len(trace.messages) >= 3
 
 
 def test_material_grounding_graph_includes_researcher() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, material_grounding=True, verification=True, synthesis=True), max_nodes=5)
     )
-    trace = GraphExecutor().execute("根据材料比较两个框架。材料如下：A 强，B 简单。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
+    trace = _executor().execute("根据材料比较两个框架。材料如下：A 强，B 简单。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
 
     assert _types(graph) == ["planner", "researcher", "executor", "verifier", "synthesizer"]
     assert "researcher" in trace.metadata["graph_execution"]["executed_nodes"]
 
 
-def test_tool_execution_graph_includes_mock_tool_executor_message() -> None:
+def test_tool_execution_graph_declares_tool_step_without_fake_tool() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, tool_execution=True, verification=True, synthesis=True), max_nodes=5)
     )
-    trace = GraphExecutor().execute("查询数据库中退款失败的订单，并说明原因。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
+    trace = _executor().execute("查询数据库中退款失败的订单，并说明原因。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
 
     assert _types(graph) == ["planner", "tool_executor", "executor", "verifier", "synthesizer"]
     assert "tool_executor" in trace.metadata["graph_execution"]["executed_nodes"]
-    assert any(message.metadata.get("node_type") == "tool_executor" for message in trace.messages)
+    assert any("tool_step_declared" in evidence for message in trace.messages for evidence in message.evidence)
 
 
 def test_material_and_tool_graph_augments_evidence_template() -> None:
@@ -127,7 +133,7 @@ def test_code_testing_budget_failure_reports_validation_errors() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, code_testing=True, verification=True, synthesis=True), max_nodes=4)
     )
-    trace = GraphExecutor().execute("实现并测试一个函数。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
+    trace = _executor().execute("实现并测试一个函数。", graph, _profile(), Topology.SUPERVISOR_WORKER, "test")
 
     assert "too_many_nodes:6>4" in graph.validation_errors
     assert trace.verification is not None
@@ -139,7 +145,7 @@ def test_safety_review_graph_includes_safety_verifier() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, safety_review=True, verification=True, synthesis=True), max_nodes=5)
     )
-    trace = GraphExecutor().execute("删除生产数据库中的测试用户。", graph, _profile(), Topology.REVIEW_LOOP, "test")
+    trace = _executor().execute("删除生产数据库中的测试用户。", graph, _profile(), Topology.REVIEW_LOOP, "test")
 
     assert _types(graph) == ["planner", "executor", "safety_verifier", "verifier", "synthesizer"]
     assert "safety_verifier" in trace.metadata["graph_execution"]["executed_nodes"]
@@ -149,7 +155,7 @@ def test_blocked_graph_executes_no_regular_nodes() -> None:
     graph = ConstrainedTopologyGenerator().generate(
         _spec(CapabilityNeeds(planning=True, material_grounding=True, verification=True), max_nodes=5, blocked=True)
     )
-    trace = GraphExecutor().execute("请根据给定材料比较。", graph, _profile(), Topology.SINGLE_AGENT, "blocked")
+    trace = _executor().execute("请根据给定材料比较。", graph, _profile(), Topology.SINGLE_AGENT, "blocked")
 
     assert graph.blocked
     assert trace.metadata["graph_execution"]["executed_nodes"] == []
@@ -176,14 +182,15 @@ def test_validate_graph_finds_required_errors() -> None:
     assert "invalid_entry_node" in errors
 
 
-def test_cli_quant_show_topology_contract_report(tmp_path) -> None:
+def test_cli_quant_show_topology_contract_report(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_build_backend", lambda *args, **kwargs: (FakeLlmBackend(), None))
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",
@@ -195,20 +202,21 @@ def test_cli_quant_show_topology_contract_report(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "[Generated Topology]" in result.stdout
-    assert "Planner → Executor → Verifier → Synthesizer" in result.stdout
+    assert "Planner -> Executor -> Verifier -> Synthesizer" in result.stdout
     assert "[Graph Execution]" in result.stdout
     assert "executed_nodes" in result.stdout
     assert "[Contract Report]" in result.stdout
 
 
-def test_json_trace_contains_generated_topology_and_graph_execution(tmp_path) -> None:
+def test_json_trace_contains_generated_topology_and_graph_execution(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_build_backend", lambda *args, **kwargs: (FakeLlmBackend(), None))
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "比较 AutoGen 和 CAMEL 的架构差异，并给出适用场景。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--router",

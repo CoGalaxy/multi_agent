@@ -3,6 +3,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+import verifiable_multi_agent.cli as cli_module
 from verifiable_multi_agent.cli import app
 from verifiable_multi_agent.contracts import (
     AgentRole,
@@ -15,47 +16,45 @@ from verifiable_multi_agent.contracts import (
 from verifiable_multi_agent.reporting import build_contract_report, format_contract_report
 from verifiable_multi_agent.trace import build_run_trace, save_run_trace
 
+from tests.fake_llm import FakeLlmBackend
+
 
 def _sample_trace() -> AgentTrace:
     trace = AgentTrace(
-        task="比较两个多智能体框架，并验证比较标准。",
+        task="compare two multi-agent frameworks",
         topology=Topology.SUPERVISOR_WORKER,
-        profile=TaskProfile(
-            task="比较两个多智能体框架，并验证比较标准。",
-            complexity=0.55,
-            verifiability=0.75,
-        ),
-        topology_reason="complexity=0.55, verifiability=0.75 → SUPERVISOR_WORKER",
-        final_answer="AutoGen 更适合复杂工具协作，CAMEL 更适合轻量基线。",
+        profile=TaskProfile(task="compare two multi-agent frameworks", complexity=0.55, verifiability=0.75),
+        topology_reason="quant route",
+        final_answer="AutoGen and CAMEL differ in coordination style.",
     )
     trace.messages = [
         ContractMessage(
             role=AgentRole.PLANNER,
-            subtask="定义比较标准",
-            claim="需要从易用性和扩展性比较。",
+            subtask="define criteria",
+            claim="Compare usability and extensibility.",
             evidence=["task asks for comparison"],
-            action="列出比较维度。",
+            action="list criteria",
         ),
         ContractMessage(
             role=AgentRole.EXECUTOR,
-            subtask="生成对比答案",
-            claim="AutoGen 扩展性更强。",
+            subtask="draft answer",
+            claim="AutoGen is more extensible.",
             evidence=["planner criteria"],
-            action="生成对比表。",
+            action="draft comparison",
         ),
         ContractMessage(
             role=AgentRole.EXECUTOR,
-            subtask="补充结论",
-            claim="CAMEL 更适合作为轻量基线。",
+            subtask="add conclusion",
+            claim="CAMEL is a lighter baseline.",
             evidence=[],
-            action="补充结论。",
+            action="add conclusion",
         ),
         ContractMessage(
             role=AgentRole.VERIFIER,
-            subtask="验证覆盖度",
-            claim="比较覆盖主要维度。",
+            subtask="verify coverage",
+            claim="The comparison covers main dimensions.",
             evidence=["audited prior messages"],
-            action="确认覆盖度。",
+            action="confirm coverage",
         ),
     ]
     trace.verification = VerificationResult(
@@ -65,6 +64,10 @@ def _sample_trace() -> AgentTrace:
         next_action="escalate",
     )
     return trace
+
+
+def _patch_backend(monkeypatch) -> None:
+    monkeypatch.setattr(cli_module, "_build_backend", lambda *args, **kwargs: (FakeLlmBackend(), None))
 
 
 def test_run_trace_json_contains_required_fields(tmp_path: Path) -> None:
@@ -120,32 +123,34 @@ def test_contract_report_format_matches_human_readable_sections() -> None:
     assert "[Final Answer]" in rendered
 
 
-def test_cli_observability_flags_do_not_break_default_output(tmp_path: Path) -> None:
+def test_cli_observability_flags_do_not_break_default_output(tmp_path: Path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "总结可验证多智能体协同架构的核心目标。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
         ],
     )
 
     assert result.exit_code == 0
-    assert "答案" in result.stdout or "绛旀" in result.stdout
-    assert "调试轨迹" in result.stdout or "璋冭瘯" in result.stdout
+    assert "Answer" in result.stdout
+    assert "Debug Trace" in result.stdout
 
 
-def test_cli_json_trace_outputs_parseable_json(tmp_path: Path) -> None:
+def test_cli_json_trace_outputs_parseable_json(tmp_path: Path, monkeypatch) -> None:
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "总结可验证多智能体协同架构的核心目标。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--json-trace",
@@ -162,13 +167,14 @@ def test_cli_json_trace_outputs_parseable_json(tmp_path: Path) -> None:
 
 def test_cli_save_run_writes_trace_json(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    _patch_backend(monkeypatch)
     runner = CliRunner()
     result = runner.invoke(
         app,
         [
             "总结可验证多智能体协同架构的核心目标。",
             "--backend",
-            "mock",
+            "vllm",
             "--memory",
             str(tmp_path / "memory.jsonl"),
             "--save-run",

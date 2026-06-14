@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from verifiable_multi_agent.backends import OllamaBackend
 from verifiable_multi_agent.orchestrator import Orchestrator
 from verifiable_multi_agent.profiler import LlmProfiler, profile_task
-from verifiable_multi_agent.router import select_topology
+from verifiable_multi_agent.quantitative_router import QuantitativeRouter, infer_input_requirements, topology_from_spec
 
 TASK_FILE = Path(__file__).resolve().parent.parent / "data" / "benchmark_e2e_tasks.json"
 MODEL_MAIN = "qwen3.5:4b"
@@ -99,7 +99,8 @@ def run_multi_agent(task: str, backend: OllamaBackend, profiler: LlmProfiler) ->
     trace = orch.solve(task)
     elapsed = time.perf_counter() - t0
 
-    topology = select_topology(trace.profile).value
+    spec = QuantitativeRouter().route(trace.profile, infer_input_requirements(task))
+    topology = topology_from_spec(spec).value
     verification = trace.verification
 
     return {

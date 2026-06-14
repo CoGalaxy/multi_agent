@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from verifiable_multi_agent.agents import LLMAgent, RuleBasedAgent
+from verifiable_multi_agent.agents import LLMAgent
 from verifiable_multi_agent.backends import LlmBackend
 from verifiable_multi_agent.contracts import AgentRole, AgentTrace, ContractMessage, TaskProfile, Topology, VerificationResult
 from verifiable_multi_agent.rag import SimpleRagRetriever
@@ -10,7 +10,11 @@ from verifiable_multi_agent.verifier import verify_contracts
 
 
 class GraphExecutor:
-    def __init__(self, backend: LlmBackend | None = None, retriever: SimpleRagRetriever | None = None) -> None:
+    """Executes the generated collaboration graph with real LLM agents."""
+
+    def __init__(self, backend: LlmBackend | None, retriever: SimpleRagRetriever | None = None) -> None:
+        if not backend or not backend.is_real_llm:
+            raise RuntimeError("GraphExecutor requires a real LLM backend.")
         self.backend = backend
         self.retriever = retriever
 
@@ -78,6 +82,7 @@ class GraphExecutor:
     def _run_node(self, task: str, node: AgentNode, context: list[ContractMessage]) -> ContractMessage:
         role = _role_for_node(node.type)
         stage_note = f"Graph node={node.type.value}; config={node.config}"
+
         if node.type == AgentType.RESEARCHER and self.retriever and self.retriever.available:
             hits = self.retriever.search(task)
             if hits:
@@ -111,6 +116,7 @@ class GraphExecutor:
                     }
                 )
                 return message
+
         message = self._make_agent(role).run(
             task,
             context,
@@ -120,7 +126,7 @@ class GraphExecutor:
         )
         message.metadata.update({"node_id": node.id, "node_type": node.type.value, "node_config": node.config})
         if node.type == AgentType.TOOL_EXECUTOR:
-            message.evidence.append("mock_tool_result: no real tool was invoked in stage 2.")
+            message.evidence.append("tool_step_declared: no external tool connector is part of this thesis prototype.")
         return message
 
     def _maybe_run_review_loop(self, task: str, graph: CollaborationGraph, trace: AgentTrace) -> AgentTrace:
@@ -143,11 +149,8 @@ class GraphExecutor:
             trace.verification = verify_contracts(trace.messages)
         return trace
 
-    def _make_agent(self, role: AgentRole) -> RuleBasedAgent | LLMAgent:
-        """根据 backend 类型选择合适的 Agent 实现。"""
-        if self.backend and self.backend.is_real_llm:
-            return LLMAgent(role, self.backend)
-        return RuleBasedAgent(role, backend=self.backend)
+    def _make_agent(self, role: AgentRole) -> LLMAgent:
+        return LLMAgent(role, self.backend)
 
 
 def _role_for_node(node_type: AgentType) -> AgentRole:
@@ -164,7 +167,7 @@ def _subtask_for_node(node_type: AgentType) -> str:
     return {
         AgentType.PLANNER: "Plan graph execution steps",
         AgentType.RESEARCHER: "Extract material-grounded evidence",
-        AgentType.TOOL_EXECUTOR: "Run required tool step",
+        AgentType.TOOL_EXECUTOR: "Describe required tool step",
         AgentType.EXECUTOR: "Produce candidate solution",
         AgentType.CODER: "Implement candidate code",
         AgentType.TESTER: "Test candidate code",
@@ -180,7 +183,7 @@ def _action_for_node(node_type: AgentType) -> str:
     return {
         AgentType.PLANNER: "Create a graph-local execution plan.",
         AgentType.RESEARCHER: "Ground the answer in provided material or note missing material.",
-        AgentType.TOOL_EXECUTOR: "Produce a mock tool observation for deterministic testing.",
+        AgentType.TOOL_EXECUTOR: "Describe the tool requirement without invoking an external connector.",
         AgentType.EXECUTOR: "Draft the answer using upstream messages.",
         AgentType.CODER: "Draft implementation-oriented output.",
         AgentType.TESTER: "Check the candidate output with deterministic test reasoning.",

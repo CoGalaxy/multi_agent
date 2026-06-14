@@ -53,7 +53,7 @@ def infer_input_requirements(task: str) -> InputRequirements:
     )
 
 
-# 拓扑升级映射（与 router.py 保持一致）
+# Topology upgrade mapping used by route memory correction.
 _TOPOLOGY_UPGRADE = {
     Topology.SINGLE_AGENT: Topology.SUPERVISOR_WORKER,
     Topology.SUPERVISOR_WORKER: Topology.REVIEW_LOOP,
@@ -166,7 +166,7 @@ class QuantitativeRouter:
 
 
 def topology_from_spec(spec: TopologySpec) -> Topology:
-    """从 TopologySpec 映射到 Topology，与 router.py 决策矩阵对齐。
+    """Map TopologySpec to the three thesis topologies.
 
     决策矩阵：
       complexity < 0.4  AND verifiability < 0.4  → SINGLE_AGENT
@@ -175,6 +175,19 @@ def topology_from_spec(spec: TopologySpec) -> Topology:
     """
     if spec.blocked:
         return Topology.SINGLE_AGENT
+    needs = spec.capability_needs
+    if spec.verifiability >= 0.4:
+        return Topology.REVIEW_LOOP
+    if needs.safety_review or needs.critique or needs.revision or spec.max_review_loops > 0:
+        return Topology.REVIEW_LOOP
+    if (
+        needs.planning
+        or needs.material_grounding
+        or needs.tool_execution
+        or needs.verification
+        or needs.synthesis
+    ):
+        return Topology.SUPERVISOR_WORKER
     if spec.complexity < 0.4 and spec.verifiability < 0.4:
         return Topology.SINGLE_AGENT
     if spec.complexity >= 0.4 and spec.verifiability < 0.4:
@@ -217,7 +230,7 @@ def _has_inline_material(task: str) -> bool:
 
 
 def _matrix_topology(complexity: float, verifiability: float) -> Topology:
-    """二维决策矩阵 — 与 router.py 和 topology_from_spec 保持一致。"""
+    """Two-dimensional decision matrix shared with topology_from_spec."""
     if complexity < 0.4 and verifiability < 0.4:
         return Topology.SINGLE_AGENT
     if complexity >= 0.4 and verifiability < 0.4:
