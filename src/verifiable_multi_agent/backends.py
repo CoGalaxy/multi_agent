@@ -114,8 +114,9 @@ class OllamaBackend(LlmBackend):
         base_url: str = "http://localhost:11434",
         timeout: float = 120.0,
         temperature: float = 0.2,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
         think: bool = False,
+        json_mode: bool = True,
         max_retries: int = 2,
         retry_sleep: float = 1.0,
     ) -> None:
@@ -125,6 +126,7 @@ class OllamaBackend(LlmBackend):
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.think = think
+        self.json_mode = json_mode
         self.max_retries = max_retries
         self.retry_sleep = retry_sleep
 
@@ -144,6 +146,8 @@ class OllamaBackend(LlmBackend):
         }
         if not self.think:
             payload["think"] = False
+        if self.json_mode:
+            payload["format"] = "json"
 
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):

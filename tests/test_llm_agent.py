@@ -122,6 +122,23 @@ def quick_sort(items):
     assert msg.action == "synthesize"
 
 
+def test_llm_agent_repairs_invalid_backslash_escape_from_local_model() -> None:
+    raw = r'''{
+  "claim": "proof uses \[0 <= size <= capacity\] and \(\forall n\)",
+  "evidence": ["invariant written as \[0 <= size <= capacity\]"],
+  "action": "synthesize",
+  "uncertainty": 0.1
+}'''
+    backend = _fake_backend(raw)
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+
+    msg = agent.run(task="prove bounded queue invariant", context=[])
+
+    assert msg.claim != "parse error"
+    assert "size <= capacity" in msg.claim
+    assert msg.evidence
+
+
 def test_llm_agent_fallback_on_missing_fields() -> None:
     """backend 返回合法 JSON 但缺少部分字段时，使用默认值填充。"""
     backend = _fake_backend('{"claim": "only claim"}')
@@ -225,6 +242,50 @@ def test_synthesizer_prompt_preserves_complete_deliverables() -> None:
     assert "instead of replacing them with a description" in system_prompt
     assert "schema, SQL, API code" in system_prompt
     assert "preserve complete upstream deliverables" in user_prompt
+
+
+def test_synthesizer_prompt_requires_claim_to_contain_deliverable() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+
+    agent.run(task="prove an invariant and list every state transition", context=[])
+
+    system_prompt = backend.calls[-1]["system"]
+    user_prompt = backend.calls[-1]["user"]
+    assert "claim field itself must contain the final deliverable" in system_prompt
+    assert "evidence cannot substitute" in system_prompt
+    assert "actual requested deliverables inside this claim" in user_prompt
+
+
+def test_synthesizer_prompt_keeps_earlier_artifacts_after_review_loop() -> None:
+    backend = _fake_backend(_valid_json_response())
+    agent = LLMAgent(AgentRole.SYNTHESIZER, backend=backend)
+    context = [
+        ContractMessage(
+            role=AgentRole.EXECUTOR,
+            subtask="code",
+            claim="```python\ndef put(item):\n    pass\n```",
+            evidence=["bounded queue implementation"],
+            action="code",
+            metadata={"node_type": "coder"},
+        )
+    ]
+    for index in range(10):
+        context.append(
+            ContractMessage(
+                role=AgentRole.VERIFIER,
+                subtask=f"verify-{index}",
+                claim=f"APPROVED step {index}",
+                evidence=[f"evidence {index}"],
+                action="verify",
+            )
+        )
+
+    agent.run(task="implement and prove a bounded queue", context=context, subtask="synthesize")
+
+    user_prompt = backend.calls[-1]["user"]
+    assert "def put" in user_prompt
+    assert "bounded queue implementation" in user_prompt
 
 
 def test_coder_prompt_requires_complete_code_deliverable() -> None:

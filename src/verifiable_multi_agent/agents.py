@@ -70,14 +70,17 @@ class LLMAgent:
                 "Use the upstream evidence to give clear dimensions, comparisons, caveats, and a conclusion. "
                 "If upstream nodes produced concrete deliverables, the final answer must include the complete "
                 "deliverables instead of replacing them with a description. Concrete deliverables include schema, "
-                "SQL, API code, functions, tests, configuration, step-by-step procedures, tables, and checklists. "
+                "SQL, API code, functions, tests, proofs, derivations, invariants, configuration, "
+                "step-by-step procedures, tables, and checklists. "
+                "The claim field itself must contain the final deliverable; evidence cannot substitute for it. "
             )
         return (
             f"You are the {self.role.value} agent in a thesis prototype. "
             f"{language}"
             f"{verifier_rule}"
             f"{synthesis_rule}"
-            "Keep the original task as the only topic. Return only valid JSON."
+            "Keep the original task as the only topic. Return only valid JSON. "
+            "Inside JSON strings, escape every backslash as \\\\; for math, prefer plain text over LaTeX delimiters."
         )
 
     def _build_user_prompt(
@@ -87,7 +90,7 @@ class LLMAgent:
         subtask: str | None,
         stage_note: str | None,
     ) -> str:
-        context_summary = "\n".join(_format_context_message(message) for message in context[-6:])
+        context_summary = "\n".join(_format_context_message(message) for message in _select_context_messages(context))
         parts = [
             f"Subtask: {subtask or 'process current graph node'}",
             "",
@@ -100,6 +103,11 @@ class LLMAgent:
         deliverable_instruction = _deliverable_instruction(task, subtask)
         if deliverable_instruction:
             parts.append(f"Deliverable requirement: {deliverable_instruction}")
+            parts.append(
+                "The final claim must contain the actual deliverable. Do not only say that the deliverable "
+                "was completed, included, designed, implemented, proved, tested, or verified. "
+                "preserve complete upstream deliverables when they are available."
+            )
         parts.extend(
             [
                 "",
@@ -122,13 +130,56 @@ def _ensure_str_list(value: object) -> list[str]:
 
 
 def _loads_contract_json(raw: str) -> dict:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = json.loads(_escape_control_chars_inside_strings(raw))
+    candidates = _json_repair_candidates(raw)
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            break
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    else:
+        if last_error is None:
+            raise json.JSONDecodeError("empty LLM response", raw, 0)
+        raise last_error
     if not isinstance(data, dict):
         raise TypeError("LLM response JSON must be an object")
     return data
+
+
+def _json_repair_candidates(raw: str) -> list[str]:
+    stripped = raw.strip()
+    extracted = _extract_json_object(stripped)
+    candidates = [
+        stripped,
+        extracted,
+        _escape_control_chars_inside_strings(stripped),
+        _escape_control_chars_inside_strings(extracted),
+        _repair_invalid_json_escapes(_escape_control_chars_inside_strings(stripped)),
+        _repair_invalid_json_escapes(_escape_control_chars_inside_strings(extracted)),
+    ]
+    deduped: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in deduped:
+            deduped.append(candidate)
+    return deduped
+
+
+def _extract_json_object(raw: str) -> str:
+    """Keep only the outer JSON object when a local model wraps it in text or fences."""
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        return text[start : end + 1]
+    return text
 
 
 def _escape_control_chars_inside_strings(raw: str) -> str:
@@ -162,11 +213,59 @@ def _escape_control_chars_inside_strings(raw: str) -> str:
     return "".join(repaired)
 
 
+def _repair_invalid_json_escapes(raw: str) -> str:
+    r"""Repair Qwen/Ollama-style string escapes such as \[ or \( inside JSON values."""
+    valid_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+    repaired: list[str] = []
+    in_string = False
+    escaped = False
+    for char in raw:
+        if escaped:
+            if char not in valid_escapes:
+                repaired.append("\\")
+            repaired.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            repaired.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            repaired.append(char)
+            in_string = not in_string
+            continue
+        repaired.append(char)
+    if escaped:
+        repaired.append("\\")
+    return "".join(repaired)
+
+
 def _format_context_message(message: ContractMessage) -> str:
     evidence = "; ".join(message.evidence[:3])
     if evidence:
         return f"[{message.role.value}] claim={message.claim}\n  evidence={evidence}"
     return f"[{message.role.value}] claim={message.claim}"
+
+
+def _select_context_messages(context: list[ContractMessage]) -> list[ContractMessage]:
+    """Keep enough recent trace for final delivery without losing earlier artifacts."""
+    if len(context) <= 10:
+        return context
+    artifact_roles = {
+        AgentRole.EXECUTOR,
+    }
+    artifact_node_types = {"coder", "executor", "tester", "reviser", "tool_executor"}
+    selected: list[ContractMessage] = []
+    for message in context:
+        if (
+            message.role in artifact_roles
+            or message.metadata.get("node_type") in artifact_node_types
+        ) and message not in selected:
+            selected.append(message)
+    for message in context[-8:]:
+        if message not in selected:
+            selected.append(message)
+    return selected
 
 
 def _deliverable_instruction(task: str, subtask: str | None) -> str:
@@ -203,6 +302,13 @@ def _claim_schema_line(role: AgentRole, task: str = "", subtask: str | None = No
             'REJECTED: [reason] with the exact conflicting claim and evidence item",'
         )
     if role == AgentRole.SYNTHESIZER:
+        if deliverable_instruction:
+            return (
+                '  "claim": "complete final answer in Simplified Chinese when the task is Chinese; '
+                'include the actual requested deliverables inside this claim, such as full proof steps, '
+                'derivation, schema, SQL, API code, functions, tests, tables, checklists, or procedures; '
+                'do not replace deliverables with a summary that they were completed",'
+            )
         return (
             '  "claim": "complete final answer in Simplified Chinese when the task is Chinese; '
             'write 3-6 compact paragraphs or bullet points; include key dimensions, supported details, '

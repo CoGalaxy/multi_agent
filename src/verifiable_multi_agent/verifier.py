@@ -53,6 +53,7 @@ JSON:"""
 
 _POSITIVE_CLAIM_KEYWORDS = ("correct", "valid", "passed", "\u6b63\u786e", "\u65e0\u8bef", "\u901a\u8fc7")
 _NEGATIVE_EVIDENCE_KEYWORDS = ("error", "fail", "failed", "failure", "\u9519\u8bef", "\u5931\u8d25")
+_MIN_ACCEPTABLE_SUPPORT_RATE = 0.4
 
 
 def verify_contracts(messages: list[ContractMessage], task: str | None = None) -> VerificationResult:
@@ -114,8 +115,9 @@ class ContractVerifier:
         if soft_mismatches:
             support_rate = max(0.0, support_rate - 0.05 * soft_mismatches)
 
+        support_gate_required = task_coverage is None
         accepted = (
-            support_rate >= 0.5
+            (not support_gate_required or support_rate >= _MIN_ACCEPTABLE_SUPPORT_RATE)
             and (task_coverage is None or task_coverage >= 0.75)
             and not any("missing_action" in item for item in violations)
             and not any(item.startswith("verifier_rejected") for item in violations)
@@ -231,8 +233,6 @@ def _answer_text(messages: list[ContractMessage]) -> str:
     parts: list[str] = []
     for message in selected:
         parts.append(message.claim)
-        parts.extend(message.evidence)
-        parts.append(message.action)
     return "\n".join(parts).lower()
 
 

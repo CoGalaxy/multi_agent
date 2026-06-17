@@ -128,3 +128,19 @@ def test_task_coverage_requires_concrete_proof_steps() -> None:
 
     assert not result.accepted
     assert "missing_task_coverage:proof" in result.violations
+
+
+def test_task_coverage_does_not_use_evidence_as_final_deliverable() -> None:
+    task = "prove the invariant 0 <= size <= capacity for put and get"
+    message = ContractMessage(
+        role=AgentRole.SYNTHESIZER,
+        subtask="final",
+        claim="The proof is complete and covers put and get.",
+        evidence=["assume the invariant holds; therefore put and get preserve it; qed"],
+        action="synthesize",
+    )
+
+    result = ContractVerifier().verify([message], task=task)
+
+    assert not result.accepted
+    assert "missing_task_coverage:proof" in result.violations

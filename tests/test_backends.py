@@ -1,4 +1,4 @@
-from verifiable_multi_agent.backends import DeepSeekBackend
+from verifiable_multi_agent.backends import DeepSeekBackend, OllamaBackend
 import httpx
 
 
@@ -54,3 +54,29 @@ def test_backend_retries_transient_connect_error(monkeypatch) -> None:
 
     assert backend.complete("system", "user", role="executor") == "ok after retry"
     assert calls["count"] == 2
+
+
+def test_ollama_backend_requests_json_mode(monkeypatch) -> None:
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"message": {"content": '{"claim":"ok"}'}}
+
+    def fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    backend = OllamaBackend(model="qwen3.5:4b")
+
+    assert backend.complete("system", "user", role="synthesizer") == '{"claim":"ok"}'
+    assert captured["url"] == "http://localhost:11434/api/chat"
+    assert captured["json"]["format"] == "json"
+    assert captured["json"]["think"] is False
+    assert captured["json"]["options"]["num_predict"] == 4096
